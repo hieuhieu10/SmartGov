@@ -1,1 +1,1 @@
-# SmartGov
+# SmartGov AI_HACKATHON_2026
