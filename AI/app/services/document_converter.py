@@ -8,7 +8,10 @@ Pipeline:
 """
 
 import logging
+import json
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from openai import OpenAI
@@ -55,41 +58,103 @@ class DocumentConverter:
         """
         logger.info(f"Converting to Markdown: {file_path}")
 
+        markitdown_error: Exception | None = None
         try:
-            result = self._markitdown.convert(file_path)
-            raw_markdown = result.text_content
+            markdown = self._convert_with_markitdown(file_path)
+            if markdown:
+                logger.info(
+                    "Converted to Markdown with markitdown_vision: %d chars from %s",
+                    len(markdown),
+                    file_path,
+                )
+                return markdown
+            logger.warning("MarkItDown returned empty Markdown for %s", file_path)
+        except Exception as exc:
+            markitdown_error = exc
+            logger.error("MarkItDown conversion failed for %s: %s", file_path, exc)
 
-            # Regex tìm nội dung giữa *[Image OCR] ... [End OCR]* (Dành cho file scan PDF/Image)
-            pattern = r"\*\[Image OCR\](.*?)\[End OCR\]\*"
-            matches = re.findall(pattern, raw_markdown, re.DOTALL)
-            
-            if matches:
-                # Nếu có nhiều block OCR → nối lại
-                markdown = "\n".join(match.strip() for match in matches)
-            else:
-                # Nếu không có → trả toàn bộ nội dung
-                markdown = raw_markdown.strip() if raw_markdown else ""
+        try:
+            markdown = self._convert_with_paddleocr_service(file_path)
+            if markdown:
+                logger.info(
+                    "Converted to Markdown with paddleocr_fallback: %d chars from %s",
+                    len(markdown),
+                    file_path,
+                )
+                return markdown
+        except Exception as exc:
+            logger.error("PaddleOCR fallback failed for %s: %s", file_path, exc)
 
-            if not markdown:
-                # Fallback: read as plain text for simple text files
-                suffix = Path(file_path).suffix.lower()
-                if suffix in ('.txt', '.md', '.csv'):
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        markdown = f.read()
+        plain_text = self._read_plain_text_fallback(file_path)
+        if plain_text:
+            logger.warning(
+                "Converted to Markdown with plain_text_fallback: %d chars from %s",
+                len(plain_text),
+                file_path,
+            )
+            return plain_text
 
-            logger.info(f"Converted to Markdown: {len(markdown)} chars from {file_path}")
-            return markdown
+        if markitdown_error:
+            raise ValueError(f"Cannot convert file to text: {file_path}") from markitdown_error
+        raise ValueError(f"Cannot convert file to text: {file_path}")
 
-        except Exception as e:
-            logger.error(f"MarkItDown conversion failed for {file_path}: {e}")
-            # Last resort fallback: try reading as text
-            try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                logger.warning(f"Fallback to plain text read: {file_path}")
-                return content
-            except Exception:
-                raise ValueError(f"Cannot convert file to text: {file_path}")
+    def _convert_with_markitdown(self, file_path: str) -> str:
+        result = self._markitdown.convert(file_path)
+        raw_markdown = result.text_content
+
+        # Regex tìm nội dung giữa *[Image OCR] ... [End OCR]* (Dành cho file scan PDF/Image)
+        pattern = r"\*\[Image OCR\](.*?)\[End OCR\]\*"
+        matches = re.findall(pattern, raw_markdown or "", re.DOTALL)
+
+        if matches:
+            # Nếu có nhiều block OCR → nối lại
+            return "\n".join(match.strip() for match in matches if match.strip()).strip()
+
+        # Nếu không có → trả toàn bộ nội dung
+        return raw_markdown.strip() if raw_markdown else ""
+
+    def _convert_with_paddleocr_service(self, file_path: str) -> str:
+        url = settings.ocr_service_url.rstrip("/") + "/ocr/markdown"
+        payload = json.dumps({"file_path": file_path}).encode("utf-8")
+        request = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=600) as response:
+                body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"OCR service returned HTTP {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Cannot connect OCR service at {url}: {exc}") from exc
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"OCR service returned invalid JSON: {body[:200]}") from exc
+
+        if not data.get("ok"):
+            raise RuntimeError(data.get("error") or "OCR service failed")
+
+        markdown = str(data.get("markdown") or "").strip()
+        if not markdown:
+            raise RuntimeError("OCR service returned empty Markdown")
+        return markdown
+
+    def _read_plain_text_fallback(self, file_path: str) -> str:
+        suffix = Path(file_path).suffix.lower()
+        if suffix not in (".txt", ".md", ".csv"):
+            return ""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read().strip()
+        except Exception as exc:
+            logger.warning("Plain text fallback failed for %s: %s", file_path, exc)
+            return ""
 
 # Singleton
 document_converter = DocumentConverter()
