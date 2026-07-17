@@ -18,49 +18,92 @@ logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Async client for vLLM / OpenAI-compatible inference servers."""
+    """Async client for vLLM / OpenAI-compatible inference servers.
+
+    Hỗ trợ 1 model chính (vllm_*) + 1 model dự phòng (vllm_fallback_*, tùy
+    chọn). Nếu model chính lỗi (timeout, 5xx, bị chặn...), tự động thử lại
+    bằng model dự phòng trước khi báo lỗi.
+    """
 
     def __init__(self):
         self._client: Optional[AsyncOpenAI] = None
+        self._fallback_client: Optional[AsyncOpenAI] = None
 
     def _get_client(self) -> AsyncOpenAI:
-        """Lazy-init the AsyncOpenAI client."""
+        """Lazy-init the AsyncOpenAI client (model chính)."""
         if self._client is None:
+            default_headers = (
+                {"User-Agent": settings.vllm_user_agent}
+                if settings.vllm_user_agent
+                else None
+            )
             self._client = AsyncOpenAI(
                 base_url=settings.vllm_base_url,
                 api_key=settings.vllm_api_key,
                 timeout=600.0,  # 10 phút — tài liệu lớn cần thời gian xử lý
+                default_headers=default_headers,
             )
             logger.info(f"LLM client initialized: {settings.vllm_base_url} / {settings.vllm_model_name}")
         return self._client
+
+    def _get_fallback_client(self) -> Optional[AsyncOpenAI]:
+        """Lazy-init the AsyncOpenAI client dự phòng, nếu có cấu hình."""
+        if not settings.vllm_fallback_base_url:
+            return None
+        if self._fallback_client is None:
+            self._fallback_client = AsyncOpenAI(
+                base_url=settings.vllm_fallback_base_url,
+                api_key=settings.vllm_fallback_api_key,
+                timeout=600.0,
+            )
+            logger.info(
+                f"LLM fallback client initialized: "
+                f"{settings.vllm_fallback_base_url} / {settings.vllm_fallback_model_name}"
+            )
+        return self._fallback_client
 
     async def chat(self, system_prompt: str, user_prompt: str,
                    temperature: float = 0.3, max_tokens: int = 4096) -> str:
         """
         Send a chat completion request and return the assistant's response.
+
+        Thử model chính trước; nếu lỗi và có cấu hình model dự phòng, tự
+        động thử lại bằng model dự phòng.
         """
-        client = self._get_client()
-
         try:
-            response = await client.chat.completions.create(
-                model=settings.vllm_model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
+            return await self._chat_once(
+                self._get_client(), settings.vllm_model_name,
+                system_prompt, user_prompt, temperature, max_tokens,
             )
-            content = response.choices[0].message.content or ""
-            finish_reason = response.choices[0].finish_reason or "unknown"
-            logger.info(f"LLM response: {len(content)} chars (finish_reason={finish_reason})")
-            if finish_reason == "length":
-                logger.warning(f"LLM response TRUNCATED (max_tokens={max_tokens})")
-            return content
-
         except Exception as e:
-            logger.error(f"LLM request failed: {e}")
-            raise
+            fallback_client = self._get_fallback_client()
+            if fallback_client is None:
+                logger.error(f"LLM request failed (no fallback configured): {e}")
+                raise
+            logger.warning(f"LLM primary request failed, retrying with fallback: {e}")
+            return await self._chat_once(
+                fallback_client, settings.vllm_fallback_model_name,
+                system_prompt, user_prompt, temperature, max_tokens,
+            )
+
+    @staticmethod
+    async def _chat_once(client: AsyncOpenAI, model: str, system_prompt: str,
+                         user_prompt: str, temperature: float, max_tokens: int) -> str:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        content = response.choices[0].message.content or ""
+        finish_reason = response.choices[0].finish_reason or "unknown"
+        logger.info(f"LLM response ({model}): {len(content)} chars (finish_reason={finish_reason})")
+        if finish_reason == "length":
+            logger.warning(f"LLM response TRUNCATED (max_tokens={max_tokens})")
+        return content
 
     async def chat_json(self, system_prompt: str, user_prompt: str,
                         temperature: float = 0.1, max_tokens: int = 4096) -> dict:
