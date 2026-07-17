@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { MessageSquare, Files, LogOut, User, Shield, Building2, Key, X } from 'lucide-react';
+import {
+  MessageSquare,
+  Files,
+  LogOut,
+  User,
+  Shield,
+  Building2,
+  Key,
+  X,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getStoredUser, clearAuth, ApiClient } from '../api/client';
@@ -19,6 +30,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,15 +72,27 @@ export function Sidebar({ onLogout }: SidebarProps) {
     : user?.role === 'org_admin' ? 'Admin ĐV' : null;
 
   return (
-    <div className="w-64 h-screen bg-slate-900 border-r border-slate-800 flex flex-col items-start px-4 py-6 text-slate-300">
-      <div className="flex items-center gap-3 mb-10 px-2">
+    <div
+      className={clsx(
+        "h-screen bg-slate-900 border-r border-slate-800 flex flex-col items-start py-6 text-slate-300 transition-all duration-300 ease-out shrink-0",
+        isCollapsed ? "w-20 px-3" : "w-64 px-4"
+      )}
+    >
+      <div
+        className={clsx(
+          "flex items-center gap-3 mb-10 w-full",
+          isCollapsed ? "justify-center px-0" : "px-2"
+        )}
+      >
         <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold text-xl">
           AI
         </div>
-        <div>
-          <h1 className="text-lg font-bold text-white tracking-tight">Office AI</h1>
-          <p className="text-xs text-slate-400 font-medium tracking-wide">HỖ TRỢ SOẠN THẢO VB</p>
-        </div>
+        {!isCollapsed && (
+          <div>
+            <h1 className="text-lg font-bold text-white tracking-tight">Office AI</h1>
+            <p className="text-xs text-slate-400 font-medium tracking-wide">HỖ TRỢ SOẠN THẢO VB</p>
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 w-full space-y-2">
@@ -79,9 +103,11 @@ export function Sidebar({ onLogout }: SidebarProps) {
             className={({ isActive }) =>
               clsx(
                 "relative flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-300 ease-out group font-medium",
+                isCollapsed && "justify-center",
                 isActive ? "text-white bg-blue-600/10" : "hover:bg-slate-800 hover:text-slate-100"
               )
             }
+            title={isCollapsed ? item.name : undefined}
           >
             {({ isActive }) => (
               <>
@@ -95,7 +121,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
                   />
                 )}
                 <item.icon className={clsx("w-5 h-5", isActive ? "text-blue-500" : "text-slate-400 group-hover:text-blue-400")} />
-                {item.name}
+                {!isCollapsed && item.name}
               </>
             )}
           </NavLink>
@@ -104,7 +130,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
         {/* Admin Section */}
         {isAdmin && (
           <>
-            <div className="pt-4 pb-1 px-3">
+            <div className={clsx("pt-4 pb-1 px-3", isCollapsed && "sr-only")}>
               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Quản trị</div>
             </div>
             <NavLink
@@ -112,9 +138,11 @@ export function Sidebar({ onLogout }: SidebarProps) {
               className={({ isActive }) =>
                 clsx(
                   "relative flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-300 ease-out group font-medium",
+                  isCollapsed && "justify-center",
                   isActive ? "text-white bg-amber-600/10" : "hover:bg-slate-800 hover:text-slate-100"
                 )
               }
+              title={isCollapsed ? "Quản trị hệ thống" : undefined}
             >
               {({ isActive }) => (
                 <>
@@ -128,7 +156,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
                     />
                   )}
                   <Shield className={clsx("w-5 h-5", isActive ? "text-amber-500" : "text-slate-400 group-hover:text-amber-400")} />
-                  Quản trị hệ thống
+                  {!isCollapsed && "Quản trị hệ thống"}
                 </>
               )}
             </NavLink>
@@ -139,43 +167,73 @@ export function Sidebar({ onLogout }: SidebarProps) {
       {/* User info + Logout */}
       <div className="w-full mt-auto space-y-2">
         {user && (
-          <div className="flex items-center gap-3 px-3 py-3 bg-slate-800/50 rounded-xl">
+          <div
+            className={clsx(
+              "flex items-center gap-3 px-3 py-3 bg-slate-800/50 rounded-xl",
+              isCollapsed && "justify-center"
+            )}
+          >
             <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center">
               <User size={16} className="text-blue-400" />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-white truncate">{user.full_name || user.username}</p>
-                {roleLabel && (
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-400 rounded-md uppercase shrink-0">
-                    {roleLabel}
-                  </span>
+            {!isCollapsed && (
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-white truncate">{user.full_name || user.username}</p>
+                  {roleLabel && (
+                    <span className="px-1.5 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-400 rounded-md uppercase shrink-0">
+                      {roleLabel}
+                    </span>
+                  )}
+                </div>
+                {user.org_name ? (
+                  <div className="flex items-center gap-1 text-[10px] text-slate-500 truncate">
+                    <Building2 size={10} className="shrink-0" />
+                    {user.org_name}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 truncate">@{user.username}</p>
                 )}
               </div>
-              {user.org_name ? (
-                <div className="flex items-center gap-1 text-[10px] text-slate-500 truncate">
-                  <Building2 size={10} className="shrink-0" />
-                  {user.org_name}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 truncate">@{user.username}</p>
-              )}
-            </div>
+            )}
           </div>
         )}
         <button
+          onClick={() => setIsCollapsed((current) => !current)}
+          className={clsx(
+            "flex items-center gap-3 px-3 py-3 w-full rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-sm font-medium",
+            isCollapsed && "justify-center"
+          )}
+          title={isCollapsed ? "Mở rộng menu" : "Thu gọn menu"}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="w-5 h-5" />
+          ) : (
+            <ChevronLeft className="w-5 h-5" />
+          )}
+          {!isCollapsed && "Thu gọn menu"}
+        </button>
+        <button
           onClick={() => setShowPasswordModal(true)}
-          className="flex items-center gap-3 px-3 py-3 w-full rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-sm font-medium"
+          className={clsx(
+            "flex items-center gap-3 px-3 py-3 w-full rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-sm font-medium",
+            isCollapsed && "justify-center"
+          )}
+          title={isCollapsed ? "Đổi mật khẩu" : undefined}
         >
           <Key className="w-5 h-5" />
-          Đổi mật khẩu
+          {!isCollapsed && "Đổi mật khẩu"}
         </button>
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-3 w-full rounded-xl hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 transition-colors text-sm font-medium"
+          className={clsx(
+            "flex items-center gap-3 px-3 py-3 w-full rounded-xl hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 transition-colors text-sm font-medium",
+            isCollapsed && "justify-center"
+          )}
+          title={isCollapsed ? "Đăng xuất" : undefined}
         >
           <LogOut className="w-5 h-5" />
-          Đăng xuất
+          {!isCollapsed && "Đăng xuất"}
         </button>
       </div>
 

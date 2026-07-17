@@ -29,6 +29,7 @@ const DOCUMENT_FOLDERS = [
 ] as const;
 
 type DocumentFolderKey = (typeof DOCUMENT_FOLDERS)[number]["key"];
+const UPLOAD_CONCURRENCY = 3;
 
 export function RepositoryManager() {
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -38,6 +39,10 @@ export function RepositoryManager() {
   const [selectedFolderKey, setSelectedFolderKey] =
     useState<DocumentFolderKey>("draft");
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [newRepoName, setNewRepoName] = useState("");
   const [newRepoDesc, setNewRepoDesc] = useState("");
@@ -52,11 +57,13 @@ export function RepositoryManager() {
     | null
   >(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameCategoryId, setRenameCategoryId] = useState("");
   const [renameError, setRenameError] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
   const [error, setError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState(false);
+  const [isRepoListCollapsed, setIsRepoListCollapsed] = useState(false);
 
   const fetchRepos = useCallback(async () => {
     try {
@@ -137,7 +144,7 @@ export function RepositoryManager() {
         setShowCreateForm(false);
         setCreateSuccess(false);
         setIsCreating(false);
-        setSelectedRepo(repo);
+        handleSelectRepo(repo);
       }, 1200);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Lỗi khi tạo kho");
@@ -145,10 +152,16 @@ export function RepositoryManager() {
     }
   };
 
+  const handleSelectRepo = (repo: Repository) => {
+    setSelectedRepo(repo);
+    setSelectedFolderKey("draft");
+  };
+
   const openRenameRepoModal = (repo: Repository) => {
     if (repo.is_shared) return;
     setRenameTarget({ type: "repo", item: repo });
     setRenameValue(repo.name);
+    setRenameCategoryId(repo.category_id || "");
     setRenameError("");
   };
 
@@ -189,6 +202,7 @@ export function RepositoryManager() {
     if (category.is_shared) return;
     setRenameTarget({ type: "category", item: category });
     setRenameValue(category.name);
+    setRenameCategoryId("");
     setRenameError("");
   };
 
@@ -196,6 +210,7 @@ export function RepositoryManager() {
     if (isRenaming) return;
     setRenameTarget(null);
     setRenameValue("");
+    setRenameCategoryId("");
     setRenameError("");
   };
 
@@ -207,7 +222,10 @@ export function RepositoryManager() {
       setRenameError("Vui lòng nhập tên mới");
       return;
     }
-    if (name === renameTarget.item.name) {
+    const categoryChanged =
+      renameTarget.type === "repo" &&
+      renameCategoryId !== (renameTarget.item.category_id || "");
+    if (name === renameTarget.item.name && !categoryChanged) {
       closeRenameModal();
       return;
     }
@@ -218,6 +236,7 @@ export function RepositoryManager() {
       if (renameTarget.type === "repo") {
         const updated = await ApiClient.updateRepository(renameTarget.item.id, {
           name,
+          category_id: renameCategoryId || null,
         });
         if (selectedRepo?.id === renameTarget.item.id) setSelectedRepo(updated);
       } else {
@@ -232,6 +251,7 @@ export function RepositoryManager() {
       await fetchRepos();
       setRenameTarget(null);
       setRenameValue("");
+      setRenameCategoryId("");
     } catch (err: any) {
       setRenameError(
         err.response?.data?.detail ||
@@ -278,36 +298,52 @@ export function RepositoryManager() {
     }
   };
 
-  const handleUpdateRepoCategory = async (categoryId: string) => {
-    if (!selectedRepo || selectedRepo.is_shared) return;
-    try {
-      const updated = await ApiClient.updateRepository(selectedRepo.id, {
-        category_id: categoryId || null,
-      });
-      setSelectedRepo(updated);
-      await fetchRepos();
-      await fetchCategories();
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi cập nhật danh mục kho");
-    }
-  };
-
   const uploadFiles = async (fileList: FileList | File[]) => {
     if (!selectedRepo || isUploading) return;
     const files = Array.from(fileList).filter((file) => file.size > 0);
     if (files.length === 0) return;
 
+    const repoId = selectedRepo.id;
+    const folderKey = selectedFolderKey;
+    const errors: string[] = [];
+    let completed = 0;
+
     setIsUploading(true);
-    try {
-      for (const file of files) {
-        await ApiClient.uploadDocument(selectedRepo.id, file, selectedFolderKey);
+    setUploadProgress({ completed: 0, total: files.length });
+
+    const uploadOne = async (file: File) => {
+      try {
+        await ApiClient.uploadDocument(repoId, file, folderKey);
+      } catch (err: any) {
+        errors.push(
+          `${file.name}: ${err.response?.data?.detail || "Lỗi upload"}`
+        );
+      } finally {
+        completed += 1;
+        setUploadProgress({ completed, total: files.length });
       }
-      await fetchDocs(selectedRepo.id);
+    };
+
+    try {
+      const workerCount = Math.min(UPLOAD_CONCURRENCY, files.length);
+      await Promise.all(
+        Array.from({ length: workerCount }, async (_, workerIndex) => {
+          for (let index = workerIndex; index < files.length; index += workerCount) {
+            await uploadOne(files[index]);
+          }
+        })
+      );
+      await fetchDocs(repoId);
       await fetchRepos();
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi upload");
+      if (errors.length > 0) {
+        const preview = errors.slice(0, 5).join("\n");
+        const suffix =
+          errors.length > 5 ? `\n...và ${errors.length - 5} file khác` : "";
+        alert(`Một số file upload thất bại:\n${preview}${suffix}`);
+      }
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -378,32 +414,19 @@ export function RepositoryManager() {
   const renderRepoCard = (repo: Repository, shared = false) => (
     <div
       key={repo.id}
-      onClick={() => setSelectedRepo(repo)}
-      className={`p-4 rounded-2xl cursor-pointer transition-all border group ${
+      onClick={() => handleSelectRepo(repo)}
+      className={`p-3 rounded-xl cursor-pointer transition-all border ${
         selectedRepo?.id === repo.id
           ? shared
-            ? "bg-amber-50 border-amber-400 shadow-md ring-2 ring-amber-400/20"
-            : "bg-blue-50 border-blue-500 shadow-md ring-2 ring-blue-500/20"
+            ? "bg-amber-50 border-amber-300 shadow-sm"
+            : "bg-white border-blue-500 shadow-sm"
           : shared
           ? "bg-white border-slate-200 hover:border-amber-300 hover:shadow-sm"
           : "bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm"
       }`}
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              selectedRepo?.id === repo.id
-                ? shared
-                  ? "bg-amber-500 text-white"
-                  : "bg-blue-600 text-white"
-                : shared
-                ? "bg-amber-50 text-amber-500"
-                : "bg-slate-100 text-slate-500"
-            }`}
-          >
-            {shared ? <Share2 size={18} /> : <Database size={18} />}
-          </div>
+        <div className="flex items-center flex-1 min-w-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-slate-800 truncate">
@@ -420,38 +443,13 @@ export function RepositoryManager() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {!shared && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openRenameRepoModal(repo);
-                }}
-                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                title="Đổi tên kho"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteRepo(repo.id);
-                }}
-                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                title="Xóa kho"
-              >
-                <Trash2 size={14} />
-              </button>
-            </>
+          {selectedRepo?.id === repo.id ? (
+            <span className="h-2 w-2 rounded-full bg-blue-600" />
+          ) : (
+            <ChevronRight size={16} className="text-slate-400" />
           )}
-          <ChevronRight size={16} className="text-slate-400" />
         </div>
       </div>
-      {repo.description && (
-        <p className="text-xs text-slate-500 mt-2 pl-13 truncate">
-          {repo.description}
-        </p>
-      )}
     </div>
   );
 
@@ -517,16 +515,13 @@ export function RepositoryManager() {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-6xl mx-auto space-y-6"
+      className="max-w-7xl mx-auto space-y-6"
     >
       <header className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
-            Trang chủ
+            Kho dữ liệu
           </h1>
-          <p className="text-slate-500 mt-2">
-            Quản lý kho dữ liệu và tài liệu.
-          </p>
         </div>
         <button
           onClick={() => setShowCreateForm(true)}
@@ -536,250 +531,269 @@ export function RepositoryManager() {
         </button>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div
+        className={`grid grid-cols-1 gap-6 transition-all duration-300 ${
+          isRepoListCollapsed
+            ? "lg:grid-cols-[56px_minmax(0,1fr)]"
+            : "lg:grid-cols-[minmax(160px,190px)_minmax(0,1fr)]"
+        }`}
+      >
         {/* Repo List */}
-        <div className="lg:col-span-4 space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              {ownRepos.length} kho cá nhân
-            </div>
-          </div>
-
-          {ownRepos.length === 0 && sharedRepos.length === 0 ? (
-            <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-slate-300 text-slate-400">
-              <Database size={40} className="mx-auto mb-3 text-slate-300" />
-              <p className="font-medium">Chưa có kho nào</p>
-              <p className="text-sm mt-1">Tạo kho đầu tiên để bắt đầu</p>
-            </div>
+        <aside className="space-y-3 transition-all duration-300">
+          {isRepoListCollapsed ? (
+            <button
+              type="button"
+              onClick={() => setIsRepoListCollapsed(false)}
+              className="w-full min-h-16 rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50/50 transition-colors flex flex-col items-center justify-center gap-1 shadow-sm"
+              title="Mở danh sách kho"
+            >
+              <Database size={20} />
+              <ChevronRight size={16} />
+            </button>
           ) : (
             <>
-              {ownCategories.map((category) => {
-                const categoryRepos = ownRepos.filter(
-                  (repo) => repo.category_id === category.id
-                );
-                return renderCategoryBlock(category, categoryRepos, false);
-              })}
-
-              {uncategorizedOwnRepos.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1 pt-3 flex items-center gap-1">
-                    <Database size={13} />
-                    Chưa phân loại
-                  </div>
-                  {uncategorizedOwnRepos.map((repo) =>
-                    renderRepoCard(repo, false)
-                  )}
+              <div className="flex items-center justify-between px-1">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Kho cá nhân · {ownRepos.length}
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setIsRepoListCollapsed(true)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  title="Thu gọn danh sách kho"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+              </div>
 
-              {sharedRepos.length > 0 && (
+              {ownRepos.length === 0 && sharedRepos.length === 0 ? (
+                <div className="p-6 text-center bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
+                  <Database size={34} className="mx-auto mb-3 text-slate-300" />
+                  <p className="font-medium">Chưa có kho nào</p>
+                  <p className="text-sm mt-1">Tạo kho đầu tiên để bắt đầu</p>
+                </div>
+              ) : (
                 <>
-                  <div className="text-xs font-semibold text-amber-600 uppercase tracking-wider px-1 pt-4 flex items-center gap-1">
-                    <Share2 size={12} />
-                    Kho chia sẻ từ đơn vị
-                  </div>
-                  {sharedCategories.map((category) => {
-                    const categoryRepos = sharedRepos.filter(
+                  {ownCategories.map((category) => {
+                    const categoryRepos = ownRepos.filter(
                       (repo) => repo.category_id === category.id
                     );
-                    return categoryRepos.length > 0
-                      ? renderCategoryBlock(category, categoryRepos, true)
-                      : null;
+                    return renderCategoryBlock(category, categoryRepos, false);
                   })}
-                  {uncategorizedSharedRepos.map((repo) =>
-                    renderRepoCard(repo, true)
+
+                  {uncategorizedOwnRepos.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1 pt-3 flex items-center gap-1">
+                        <Database size={13} />
+                        Chưa phân loại
+                      </div>
+                      {uncategorizedOwnRepos.map((repo) =>
+                        renderRepoCard(repo, false)
+                      )}
+                    </div>
+                  )}
+
+                  {sharedRepos.length > 0 && (
+                    <>
+                      <div className="text-xs font-semibold text-amber-600 uppercase tracking-wider px-1 pt-4 flex items-center gap-1">
+                        <Share2 size={12} />
+                        Kho chia sẻ từ đơn vị
+                      </div>
+                      {sharedCategories.map((category) => {
+                        const categoryRepos = sharedRepos.filter(
+                          (repo) => repo.category_id === category.id
+                        );
+                        return categoryRepos.length > 0
+                          ? renderCategoryBlock(category, categoryRepos, true)
+                          : null;
+                      })}
+                      {uncategorizedSharedRepos.map((repo) =>
+                        renderRepoCard(repo, true)
+                      )}
+                    </>
                   )}
                 </>
               )}
             </>
           )}
-        </div>
+        </aside>
 
         {/* Repo Detail + Docs */}
-        <div className="lg:col-span-8">
+        <section className="min-w-0 transition-all duration-300">
           {selectedRepo ? (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {/* Header */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-                <div className="flex items-center gap-4 mb-2">
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex items-start gap-4">
                   <button
                     onClick={() => setSelectedRepo(null)}
                     className="lg:hidden p-2 text-slate-400 hover:text-slate-600 rounded-lg"
                   >
                     <ChevronLeft size={20} />
                   </button>
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                    <Database size={22} className="text-white" />
+                  <div className="w-11 h-11 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shrink-0">
+                    <Database size={21} className="text-white" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-xl font-bold text-slate-900 truncate">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl font-bold text-slate-900 truncate max-w-full">
                         {selectedRepo.name}
                       </h2>
-                      {!selectedRepo.is_shared && (
-                        <button
-                          onClick={() => openRenameRepoModal(selectedRepo)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          title="Đổi tên kho"
-                        >
-                          <Pencil size={15} />
-                        </button>
+                      {selectedRepo.is_shared && (
+                        <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-md text-xs font-semibold">
+                          Kho chia sẻ
+                        </span>
+                      )}
+                      {!selectedRepo.is_shared && selectedRepo.is_public && (
+                        <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-xs font-semibold">
+                          Công khai
+                        </span>
                       )}
                     </div>
                     <p className="text-sm text-slate-500">
                       {selectedRepo.description || "Không có mô tả"}
                     </p>
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-4 mt-4 text-xs text-slate-500 items-center">
-                  <span>
-                    Tạo:{" "}
-                    {new Date(selectedRepo.created_at).toLocaleDateString(
-                      "vi-VN"
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!selectedRepo.is_shared && (
+                      <>
+                        <button
+                          onClick={() => openRenameRepoModal(selectedRepo)}
+                          className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="Đổi tên kho"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await ApiClient.updateRepository(
+                                selectedRepo.id,
+                                {
+                                  is_public: !selectedRepo.is_public,
+                                }
+                              );
+                              const updated = {
+                                ...selectedRepo,
+                                is_public: !selectedRepo.is_public,
+                              };
+                              setSelectedRepo(updated);
+                              fetchRepos();
+                              fetchCategories();
+                            } catch {
+                              /* ignore */
+                            }
+                          }}
+                          className="p-2 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                          title={
+                            selectedRepo.is_public
+                              ? "Chuyển về riêng tư"
+                              : "Chia sẻ kho"
+                          }
+                        >
+                          {selectedRepo.is_public ? (
+                            <Globe size={16} />
+                          ) : (
+                            <Lock size={16} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRepo(selectedRepo.id)}
+                          className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          title="Xóa kho"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
                     )}
-                  </span>
-                  <span>·</span>
-                  <span>{selectedRepo.document_count} tài liệu</span>
-                  {selectedRepo.notebook_id && (
-                    <>
-                      <span>·</span>
-                      <span className="text-emerald-600 font-medium">
-                        ✓ Sẵn sàng AI
-                      </span>
-                    </>
-                  )}
-                  {selectedRepo.is_shared && (
-                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-md font-medium">
-                      Kho chia sẻ
-                    </span>
-                  )}
-                  {!selectedRepo.is_shared && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          await ApiClient.updateRepository(selectedRepo.id, {
-                            is_public: !selectedRepo.is_public,
-                          });
-                          const updated = {
-                            ...selectedRepo,
-                            is_public: !selectedRepo.is_public,
-                          };
-                          setSelectedRepo(updated);
-                          fetchRepos();
-                          fetchCategories();
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
-                        selectedRepo.is_public
-                          ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                      }`}
-                    >
-                      {selectedRepo.is_public ? (
-                        <>
-                          <Globe size={11} /> Công khai
-                        </>
-                      ) : (
-                        <>
-                          <Lock size={11} /> Riêng tư
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-                <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2 text-sm">
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <Folder size={16} className="text-slate-400" />
-                    <span className="font-medium">Danh mục</span>
-                  </div>
-                  {selectedRepo.is_shared ? (
-                    <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg">
-                      {selectedRepo.category_name || "Chưa phân loại"}
-                    </span>
-                  ) : (
-                    <select
-                      value={selectedRepo.category_id || ""}
-                      onChange={(e) => handleUpdateRepoCategory(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    >
-                      <option value="">Chưa phân loại</option>
-                      {ownCategories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              {/* Drive-style folders + files */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <Folder className="text-blue-600" size={18} />
-                    Tài liệu trong kho
-                  </h3>
-                  <div className="text-sm text-slate-500">
-                    {documents.length} tài liệu
                   </div>
                 </div>
-
-                <div className="p-5 border-b border-slate-100">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                    {DOCUMENT_FOLDERS.map((folder) => {
+                <div className="mt-5 -mx-5 px-5 py-4 border-y border-slate-100 bg-slate-50/60">
+                  <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+                    {DOCUMENT_FOLDERS.map((folder, index) => {
                       const count = folderDocumentCount(folder.key);
                       const active = selectedFolderKey === folder.key;
+                      const showArrow = index < DOCUMENT_FOLDERS.length - 1;
 
                       return (
-                        <button
-                          key={folder.key}
-                          type="button"
-                          onClick={() => setSelectedFolderKey(folder.key)}
-                          className={`h-24 rounded-xl border px-4 py-3 text-left transition-all ${
-                            active
-                              ? "bg-blue-50 border-blue-400 ring-2 ring-blue-100"
-                              : "bg-slate-50 border-slate-200 hover:bg-blue-50/60 hover:border-blue-200"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <FolderOpen
-                              size={24}
-                              className={
-                                active ? "text-blue-600" : "text-slate-500"
-                              }
-                            />
-                            <span className="text-xs text-slate-500">
-                              {count}
-                            </span>
-                          </div>
-                          <div className="mt-3 font-semibold text-sm text-slate-800 leading-snug">
-                            {folder.name}
-                          </div>
-                        </button>
+                        <div key={folder.key} className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFolderKey(folder.key)}
+                            className={`min-h-20 w-full rounded-lg border px-3 py-3 text-left transition-all ${
+                              active
+                                ? "bg-white border-blue-500 shadow-sm"
+                                : "bg-slate-50 border-slate-200 hover:bg-blue-50/60 hover:border-blue-200"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2 min-w-0">
+                                <FolderOpen
+                                  size={18}
+                                  className={`mt-0.5 shrink-0 ${
+                                    active ? "text-blue-600" : "text-slate-500"
+                                  }`}
+                                />
+                                <span className="font-semibold text-sm text-slate-800 leading-snug whitespace-normal break-words">
+                                  {folder.name}
+                                </span>
+                              </div>
+                              <span
+                                className={`text-xs rounded-md px-2 py-0.5 shrink-0 ${
+                                  active
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-white text-slate-500 border border-slate-200"
+                                }`}
+                              >
+                                {count}
+                              </span>
+                            </div>
+                          </button>
+                          {showArrow && (
+                            <div
+                              className="hidden xl:flex absolute -right-3 top-1/2 z-10 -translate-y-1/2 items-center justify-center text-slate-300 pointer-events-none"
+                              aria-hidden="true"
+                            >
+                              <ChevronRight size={18} strokeWidth={2.25} />
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
                 </div>
 
-                <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FolderOpen size={18} className="text-blue-600 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-800 truncate">
-                        {selectedFolder.name}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {visibleDocuments.length} file
-                      </p>
-                    </div>
-                  </div>
-                  {!selectedRepo.is_shared && (
-                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium cursor-pointer transition-colors">
-                      <UploadCloud size={16} />
-                      {isUploading ? "Đang upload..." : "Upload file"}
+                {visibleDocuments.length === 0 && !selectedRepo.is_shared && (
+                  <div className="pt-5">
+                    <label
+                      onDragEnter={handleDragOver}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`min-h-32 rounded-xl border border-dashed px-4 py-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
+                        isUploading
+                          ? "border-blue-300 bg-blue-50"
+                          : isDragging
+                          ? "border-blue-500 bg-blue-50 ring-4 ring-blue-100"
+                          : "border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/40"
+                      }`}
+                    >
+                      {isUploading ? (
+                        <Loader2
+                          size={22}
+                          className="animate-spin text-blue-600"
+                        />
+                      ) : (
+                        <UploadCloud size={22} className="text-blue-600" />
+                      )}
+                      <span className="text-sm font-semibold text-slate-700 text-center">
+                        Kéo thả file vào {selectedFolder.name}
+                      </span>
+                      <span className="text-xs text-slate-500 text-center">
+                        {isUploading && uploadProgress
+                          ? `Đang upload ${uploadProgress.completed}/${uploadProgress.total} file...`
+                          : "hoặc bấm để chọn nhiều file"}
+                      </span>
                       <input
                         type="file"
                         multiple
@@ -788,16 +802,16 @@ export function RepositoryManager() {
                         disabled={isUploading}
                       />
                     </label>
-                  )}
-                </div>
+                  </div>
+                )}
 
-                {!selectedRepo.is_shared && (
+                {!selectedRepo.is_shared && visibleDocuments.length > 0 && (
                   <label
                     onDragEnter={handleDragOver}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    className={`mx-5 mt-5 min-h-20 rounded-xl border border-dashed px-4 py-4 flex items-center justify-center gap-3 cursor-pointer transition-all ${
+                    className={`mt-5 min-h-16 rounded-lg border border-dashed px-4 py-4 flex items-center justify-center gap-3 cursor-pointer transition-all ${
                       isUploading
                         ? "border-blue-300 bg-blue-50"
                         : isDragging
@@ -806,12 +820,17 @@ export function RepositoryManager() {
                     }`}
                   >
                     {isUploading ? (
-                      <Loader2 size={18} className="animate-spin text-blue-600" />
+                      <Loader2
+                        size={18}
+                        className="animate-spin text-blue-600"
+                      />
                     ) : (
                       <UploadCloud size={18} className="text-blue-600" />
                     )}
                     <span className="text-sm font-medium text-slate-700">
-                      Kéo thả nhiều file vào {selectedFolder.name}
+                      {isUploading && uploadProgress
+                        ? `Đang upload ${uploadProgress.completed}/${uploadProgress.total} file...`
+                        : `Kéo thả nhiều file vào ${selectedFolder.name}`}
                     </span>
                     <input
                       type="file"
@@ -832,7 +851,7 @@ export function RepositoryManager() {
                     {visibleDocuments.map((doc) => (
                       <div
                         key={doc.id}
-                        className="px-6 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors group gap-4"
+                        className="py-3 flex items-center justify-between hover:bg-slate-50 transition-colors group gap-4"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <File size={16} className="text-blue-500 shrink-0" />
@@ -878,7 +897,7 @@ export function RepositoryManager() {
               <p className="text-sm mt-1">hoặc tạo kho mới để bắt đầu</p>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
       {/* Rename Modal */}
@@ -934,6 +953,27 @@ export function RepositoryManager() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-60"
                   />
                 </div>
+
+                {renameTarget.type === "repo" && (
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Chuyển danh mục
+                    </label>
+                    <select
+                      value={renameCategoryId}
+                      onChange={(e) => setRenameCategoryId(e.target.value)}
+                      disabled={isRenaming}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-60"
+                    >
+                      <option value="">Chưa phân loại</option>
+                      {ownCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {renameError && (
                   <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-sm">
