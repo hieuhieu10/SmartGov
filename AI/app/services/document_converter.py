@@ -22,6 +22,18 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Vision LLM đôi khi vẫn chèn câu dẫn kiểu "Here is the extracted text..." dù
+# đã bị cấm trong prompt. Cắt bỏ dòng dẫn này nếu có, để không lẫn vào markdown.
+_PREAMBLE_PATTERN = re.compile(
+    r"^\s*(here('|’)s|here is|sure[,!]?|certainly|below is|i (have|'ve) extracted)"
+    r"[^\n]{0,200}:\s*\n+",
+    re.IGNORECASE,
+)
+
+
+def _strip_preamble(text: str) -> str:
+    return _PREAMBLE_PATTERN.sub("", text, count=1)
+
 
 class DocumentConverter:
     """Convert document files to Markdown text using MarkItDown + Vision LLM."""
@@ -37,7 +49,12 @@ class DocumentConverter:
             llm_client=ocr_client,
             llm_model=settings.ocr_vllm_model_name,
             enable_plugins=True,
-            llm_prompt="Extract all text from this image, preserving table structure.",
+            llm_prompt=(
+                "Extract all text from this image exactly as it appears, "
+                "preserving table structure. Output ONLY the extracted text — "
+                "no preamble, no introduction, no explanation, no phrases like "
+                "'Here is the extracted text'."
+            ),
         )
         logger.info(
             f"MarkItDown initialized with Vision LLM: "
@@ -108,7 +125,8 @@ class DocumentConverter:
 
         if matches:
             # Nếu có nhiều block OCR → nối lại
-            return "\n".join(match.strip() for match in matches if match.strip()).strip()
+            cleaned = [_strip_preamble(match).strip() for match in matches]
+            return "\n".join(block for block in cleaned if block).strip()
 
         # Nếu không có → trả toàn bộ nội dung
         return raw_markdown.strip() if raw_markdown else ""
