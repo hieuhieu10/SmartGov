@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: officeai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-officeai}
+      POSTGRES_USER: ${POSTGRES_USER:-officeai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - officeai-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-officeai} -d ${POSTGRES_DB:-officeai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ai:
+    build: ./AI
+    platform: linux/amd64
+    container_name: officeai-ai
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?AI_INTERNAL_TOKEN is required}
+    env_file:
+      - path: ./AI/.env
+        required: false
+    volumes:
+      - officeai-uploads:/app/uploads
+      - officeai-outputs:/app/outputs
+      - officeai-repofiles:/app/repo_files
+      - officeai-templates:/app/user_templates
+      - type: bind
+        source: ${NOTEBOOKLM_HOME:?NOTEBOOKLM_HOME is required}
+        target: /root/.notebooklm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  be:
+    build: ./BE
+    platform: linux/amd64
+    container_name: officeai-be
+    restart: unless-stopped
+    ports:
+      - "6868:6868"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-officeai}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-officeai}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-System Administrator}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      AI_SERVICE_URL: http://ai:7000
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN}
+    env_file:
+      - path: ./BE/.env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+    volumes:
+      - officeai-uploads:/app/uploads
+      - officeai-outputs:/app/outputs
+      - officeai-repofiles:/app/repo_files
+      - officeai-templates:/app/user_templates
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6868/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  fe:
+    build: ./FE
+    container_name: officeai-fe
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      be:
+        condition: service_healthy
+
+volumes:
+  officeai-postgres:
+  officeai-uploads:
+  officeai-outputs:
+  officeai-repofiles:
+  officeai-templates:
