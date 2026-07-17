@@ -187,6 +187,32 @@ class DraftTask(Base, TimestampMixin):
     output_file: Mapped[str | None] = mapped_column(String(1000))
 
 
+class RevisionTask(Base, TimestampMixin):
+    __tablename__ = "revision_tasks"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    repo_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("repositories.id", ondelete="SET NULL"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
+    progress_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    reject_reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    input_files: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    extracted_comments: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    diff_data: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    original_document_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    proposed_document_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    approved_document_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    original_file: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    proposed_file: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    final_file: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+
+
 Index("ix_chat_repo_user_created", ChatMessage.repository_id, ChatMessage.user_id, ChatMessage.created_at)
 Index("ix_documents_repo_uploaded", Document.repository_id, Document.uploaded_at)
 Index("ix_draft_user_created", DraftTask.user_id, DraftTask.created_at)
+Index("ix_revision_user_created", RevisionTask.user_id, RevisionTask.created_at)

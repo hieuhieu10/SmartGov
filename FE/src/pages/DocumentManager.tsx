@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ApiClient } from '../api/client';
 import type { Repository, Document, RepositoryCategory } from '../api/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Database, Plus, Trash2, UploadCloud, File, ChevronRight, ChevronLeft, FileText, X, Globe, Lock, Share2, Loader2, CheckCircle2, Folder, FolderPlus, Pencil } from 'lucide-react';
+import { Database, Plus, Trash2, UploadCloud, File, ChevronRight, ChevronLeft, FileText, X, Globe, Lock, Share2, Loader2, CheckCircle2, Folder, FolderPlus, Pencil, Eye } from 'lucide-react';
 
 export function RepositoryManager() {
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -24,6 +24,9 @@ export function RepositoryManager() {
   const [error, setError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   const fetchRepos = useCallback(async () => {
     try {
@@ -259,6 +262,28 @@ export function RepositoryManager() {
       fetchDocs(selectedRepo.id);
       fetchRepos();
     } catch (err) { console.error(err); }
+  };
+
+  const openDocumentPreview = async (doc: Document) => {
+    if (!selectedRepo) return;
+    setPreviewTitle(doc.filename);
+    setPreviewHtml('');
+    setIsPreviewLoading(true);
+    try {
+      const html = await ApiClient.getDocumentPreview(selectedRepo.id, doc.id);
+      setPreviewHtml(html);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || 'Không thể tải bản xem trước';
+      setPreviewHtml(`<div style="font-family:system-ui;padding:24px;color:#b91c1c">${detail}</div>`);
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  const closeDocumentPreview = () => {
+    setPreviewHtml('');
+    setPreviewTitle('');
+    setIsPreviewLoading(false);
   };
 
   const formatSize = (bytes: number) => {
@@ -654,6 +679,13 @@ export function RepositoryManager() {
                             {status.icon}
                             {status.label}
                           </span>
+                        <button
+                          onClick={() => openDocumentPreview(doc)}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          title="Xem file"
+                        >
+                          <Eye size={14} />
+                        </button>
                         {!selectedRepo.is_shared && (
                         <button
                           onClick={() => handleDeleteDoc(doc.id)}
@@ -841,6 +873,51 @@ export function RepositoryManager() {
                 </div>
               </form>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Document Preview Modal */}
+      <AnimatePresence>
+        {(previewHtml || isPreviewLoading) && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={closeDocumentPreview}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0, y: 12 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.96, opacity: 0, y: 12 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl w-full max-w-6xl h-[90vh] shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+            >
+              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="font-bold text-slate-900 truncate">Xem file</h2>
+                  <p className="text-sm text-slate-500 truncate">{previewTitle}</p>
+                </div>
+                <button
+                  onClick={closeDocumentPreview}
+                  className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  title="Đóng"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 bg-slate-100">
+                {isPreviewLoading ? (
+                  <div className="h-full flex items-center justify-center text-slate-500">
+                    <Loader2 size={24} className="animate-spin mr-2" />
+                    Đang tải bản xem trước...
+                  </div>
+                ) : (
+                  <iframe
+                    title={previewTitle || 'Xem file'}
+                    srcDoc={previewHtml}
+                    className="w-full h-full border-0 bg-white"
+                  />
+                )}
+              </div>
             </motion.div>
           </motion.div>
         )}

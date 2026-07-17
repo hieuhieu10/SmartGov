@@ -6,11 +6,13 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import HTMLResponse
 
 from app.auth import get_current_user, can_access_repo
 from app.config import settings
 from app import database as db
 from app.models import DocumentResponse
+from app.services.docx_preview import render_docx_preview_html
 from app.services.repository_service import repository_service
 
 logger = logging.getLogger(__name__)
@@ -139,6 +141,32 @@ async def list_documents(
 
     docs = await db.get_documents_by_repository(repo_id)
     return [_build_document_response(d) for d in docs]
+
+
+@router.get("/{doc_id}/preview", response_class=HTMLResponse)
+async def preview_document(
+    repo_id: str,
+    doc_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Preview an uploaded Word document as HTML without downloading it."""
+    await can_access_repo(repo_id, current_user)
+
+    doc = await db.get_document_by_id(doc_id)
+    if not doc or doc.get("repository_id") != repo_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tài liệu không tồn tại")
+
+    file_path = Path(doc.get("stored_path") or "")
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file tài liệu")
+
+    if file_path.suffix.lower() != ".docx":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Xem trước dạng Word hiện chỉ hỗ trợ file .docx",
+        )
+
+    return HTMLResponse(render_docx_preview_html(file_path))
 
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)

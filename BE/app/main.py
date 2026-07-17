@@ -65,7 +65,7 @@ from app.services.ai_client import ai_client
 from app.services.word_exporter import word_exporter
 
 # Import routers
-from app.routers import auth_router, repository_router, document_router, chat_router, drafting_router, audio_router, template_router, admin_router
+from app.routers import auth_router, repository_router, document_router, chat_router, drafting_router, audio_router, template_router, admin_router, document_dataset_router, revision_router
 from app.database import update_audio_task
 
 # ─── Logging ──────────────────────────────────────────────────────────
@@ -105,6 +105,8 @@ app.include_router(chat_router.router)
 app.include_router(drafting_router.router)
 app.include_router(audio_router.router)
 app.include_router(template_router.router)
+app.include_router(document_dataset_router.router)
+app.include_router(revision_router.router)
 
 # ─── Sequential Processing Queue ─────────────────────────────────────
 # Ensures only ONE audio task is processed at a time (NotebookLM cannot

@@ -23,6 +23,7 @@ from app.db_models import (
     Organization,
     Repository,
     RepositoryCategory,
+    RevisionTask,
     TemplateTask,
     User,
 )
@@ -653,6 +654,68 @@ async def get_draft_tasks_by_user(user_id: str) -> list[dict]:
 
 async def delete_draft_task(task_id: str) -> None:
     await _delete(DraftTask, task_id)
+
+
+async def create_revision_task(
+    task_id: str,
+    user_id: str,
+    repo_id: str | None = None,
+    title: str = "",
+    **kwargs,
+) -> dict:
+    for field, fallback in (
+        ("input_files", {}),
+        ("original_document_data", {}),
+        ("proposed_document_data", {}),
+        ("approved_document_data", {}),
+        ("extracted_comments", []),
+        ("diff_data", []),
+    ):
+        if field in kwargs:
+            kwargs[field] = _json(kwargs[field], fallback)
+    async with SessionLocal.begin() as session:
+        obj = RevisionTask(
+            id=_uuid(task_id),
+            user_id=_uuid(user_id),
+            repo_id=_uuid(repo_id),
+            title=title,
+            **kwargs,
+        )
+        session.add(obj)
+        await session.flush()
+        return _dict(obj)
+
+
+async def get_revision_task_by_id(task_id: str) -> Optional[dict]:
+    return await _get(RevisionTask, task_id)
+
+
+async def get_revision_tasks_by_user(user_id: str) -> list[dict]:
+    async with SessionLocal() as session:
+        return [_dict(row) for row in (await session.scalars(
+            select(RevisionTask)
+            .where(RevisionTask.user_id == _uuid(user_id))
+            .order_by(RevisionTask.created_at.desc())
+            .limit(50)
+        )).all()]
+
+
+async def update_revision_task(task_id: str, **kwargs) -> Optional[dict]:
+    for field, fallback in (
+        ("input_files", {}),
+        ("original_document_data", {}),
+        ("proposed_document_data", {}),
+        ("approved_document_data", {}),
+        ("extracted_comments", []),
+        ("diff_data", []),
+    ):
+        if field in kwargs:
+            kwargs[field] = _json(kwargs[field], fallback)
+    return await _update(RevisionTask, task_id, kwargs)
+
+
+async def delete_revision_task(task_id: str) -> None:
+    await _delete(RevisionTask, task_id)
 
 
 # Organizations and departments
