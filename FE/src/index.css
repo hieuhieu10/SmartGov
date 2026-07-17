@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #3b82f6; /* Blue 500 */
+  --color-primary-hover: #2563eb; /* Blue 600 */
+  --color-surface: #ffffff;
+  --color-surface-dark: #1f2937; /* Gray 800 */
+  --color-background: #f3f4f6; /* Gray 100 */
+  --color-background-dark: #111827; /* Gray 900 */
+  
+  --font-sans: 'Inter', 'Outfit', sans-serif;
+}
+
+/* Base Body Styles */
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+  }
+}
+
+/* Custom Glassmorphism Classes */
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-sm;
+  }
+  .glass-dark {
+    @apply bg-slate-900/70 backdrop-blur-md border border-slate-700/50 shadow-lg;
+  }
+}

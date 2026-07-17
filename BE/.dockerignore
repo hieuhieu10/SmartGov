@@ -1,0 +1,14 @@
+# Ignore
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+.env
+.env.*
+data/
+uploads/
+outputs/
+repo_files/
+user_templates/
+.DS_Store
