@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, MessageSquare, Files, FileText, LogOut, User, Mic, Shield, Building2, Key, X } from 'lucide-react';
+import { MessageSquare, Files, LogOut, User, Shield, Building2, Key, X } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getStoredUser, clearAuth, ApiClient } from '../api/client';
@@ -47,11 +47,8 @@ export function Sidebar({ onLogout }: SidebarProps) {
   };
 
   const navItems = [
-    { name: 'Trang chủ', path: '/', icon: LayoutDashboard },
-    { name: 'Kho Dữ liệu', path: '/repositories', icon: Files },
+    { name: 'Trang chủ', path: '/', icon: Files },
     { name: 'Trợ lý Chat', path: '/chat', icon: MessageSquare },
-    { name: 'Soạn Văn bản', path: '/drafting', icon: FileText },
-    { name: 'Ghi âm → Biên bản', path: '/audio-to-minutes', icon: Mic },
   ];
 
   const handleLogout = () => {

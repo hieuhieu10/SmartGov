@@ -407,6 +407,7 @@ class DocumentResponse(BaseModel):
     id: str
     repository_id: str
     filename: str
+    folder_key: str = "draft"
     file_size: int
     file_type: str
     processing_status: str = "queued"

@@ -14,8 +14,9 @@ database và không tự quyết định quyền người dùng.
 ## Chạy bằng Docker
 
 1. Thay các giá trị local trong `.env` và cấu hình model trong `AI/.env`.
-2. Đăng nhập NotebookLM trên host nếu dùng engine NotebookLM.
-3. Chạy:
+2. `NOTEBOOKLM_HOME` trong `.env.example` đang dùng MacBook; nếu chạy trên Windows, đổi sang dòng Windows đã comment trong file.
+3. Đăng nhập NotebookLM trên host nếu dùng engine NotebookLM.
+4. Chạy:
 
 ```bash
 docker compose up -d --build

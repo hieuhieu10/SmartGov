@@ -5,7 +5,7 @@ STTNB Document Router — Upload and manage documents in repositories.
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.auth import get_current_user, can_access_repo
 from app.config import settings
@@ -16,6 +16,8 @@ from app.services.repository_service import repository_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/repositories/{repo_id}/documents", tags=["Documents"])
+
+DOCUMENT_FOLDER_KEYS = {"draft", "feedback", "summary", "final"}
 
 
 def _public_ai_text(value: object) -> str:
@@ -48,6 +50,7 @@ def _build_document_response(doc: dict) -> DocumentResponse:
         id=doc["id"],
         repository_id=doc["repository_id"],
         filename=doc["filename"],
+        folder_key=doc.get("folder_key") or "draft",
         file_size=doc["file_size"],
         file_type=doc["file_type"],
         processing_status=doc.get("processing_status") or "queued",
@@ -63,6 +66,7 @@ def _build_document_response(doc: dict) -> DocumentResponse:
 async def upload_document(
     repo_id: str,
     file: UploadFile = File(...),
+    folder_key: str = Form("draft"),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -72,6 +76,13 @@ async def upload_document(
     
     Tài liệu sẽ tự động được xử lý bởi hệ thống AI.
     """
+    # Validate target folder
+    if folder_key not in DOCUMENT_FOLDER_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thư mục tài liệu không hợp lệ",
+        )
+
     # Validate extension
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in settings.allowed_doc_extensions:
@@ -117,6 +128,7 @@ async def upload_document(
             filename=file.filename,
             content=content,
             file_type=file.content_type or "",
+            folder_key=folder_key,
             current_user=current_user,
         )
         return _build_document_response(doc)

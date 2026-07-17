@@ -369,6 +369,7 @@ class RepositoryService:
     async def upload_document(self, repo_id: str, user_id: str,
                               filename: str, content: bytes,
                               file_type: str = "",
+                              folder_key: str = "draft",
                               current_user: dict = None) -> dict:
         """
         Upload a document to a repository:
@@ -402,6 +403,7 @@ class RepositoryService:
             stored_path=stored_path,
             file_size=len(content),
             file_type=file_type,
+            folder_key=folder_key,
             notebooklm_source_id=None,
             doc_id=doc_id,
             processing_status="processing",

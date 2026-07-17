@@ -1,11 +1,8 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './pages/Dashboard';
 import { ChatAssistant } from './pages/ChatAssistant';
 import { RepositoryManager } from './pages/DocumentManager';
-import { TemplateLibrary } from './pages/TemplateLibrary';
-import { AudioToMinutes } from './pages/AudioToMinutes';
 import { AdminPanel } from './pages/AdminPanel';
 import { LoginPage } from './pages/LoginPage';
 import { getStoredToken, getStoredUser } from './api/client';
@@ -40,15 +37,15 @@ function App() {
         <Sidebar onLogout={handleLogout} />
         <main className="flex-1 overflow-auto bg-slate-50 p-6">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/repositories" element={<RepositoryManager />} />
+            <Route path="/" element={<RepositoryManager />} />
             <Route path="/chat" element={<ChatAssistant />} />
-            <Route path="/drafting" element={<TemplateLibrary />} />
-            <Route path="/audio-to-minutes" element={<AudioToMinutes />} />
             {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
             {/* Legacy routes redirect */}
-            <Route path="/documents" element={<Navigate to="/repositories" />} />
-            <Route path="/templates" element={<Navigate to="/drafting" />} />
+            <Route path="/repositories" element={<Navigate to="/" />} />
+            <Route path="/documents" element={<Navigate to="/" />} />
+            <Route path="/templates" element={<Navigate to="/" />} />
+            <Route path="/drafting" element={<Navigate to="/" />} />
+            <Route path="/audio-to-minutes" element={<Navigate to="/" />} />
             <Route path="/login" element={<Navigate to="/" />} />
           </Routes>
         </main>
