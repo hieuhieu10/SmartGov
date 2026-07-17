@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -98,6 +98,7 @@ class Document(Base):
     )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     stored_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    folder_key: Mapped[str] = mapped_column(String(80), default="draft", nullable=False, index=True)
     file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     file_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     notebooklm_source_id: Mapped[str | None] = mapped_column(String(255))
@@ -124,95 +125,5 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
 
-class AudioTask(Base, TimestampMixin):
-    __tablename__ = "audio_tasks"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    filename: Mapped[str] = mapped_column(String(500), nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
-    progress_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    output_file: Mapped[str | None] = mapped_column(String(1000))
-
-
-class DocumentTemplate(Base, TimestampMixin):
-    __tablename__ = "document_templates"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    template_file: Mapped[str] = mapped_column(String(1000), nullable=False)
-    source_file: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
-    doc_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
-    placeholders: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
-    template_structure: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="analyzing", nullable=False, index=True)
-    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-
-
-class TemplateTask(Base, TimestampMixin):
-    __tablename__ = "template_tasks"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    template_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("document_templates.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    status: Mapped[str] = mapped_column(String(50), default="processing", nullable=False, index=True)
-    progress_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    output_file: Mapped[str | None] = mapped_column(String(1000))
-
-
-class DraftTask(Base, TimestampMixin):
-    __tablename__ = "draft_tasks"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    repo_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("repositories.id", ondelete="SET NULL"), index=True
-    )
-    document_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
-    input_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    draft_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
-    progress_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    output_file: Mapped[str | None] = mapped_column(String(1000))
-
-
-class RevisionTask(Base, TimestampMixin):
-    __tablename__ = "revision_tasks"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    repo_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("repositories.id", ondelete="SET NULL"), index=True
-    )
-    title: Mapped[str] = mapped_column(String(500), default="", nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
-    progress_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    reject_reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    input_files: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    extracted_comments: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
-    diff_data: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
-    original_document_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    proposed_document_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    approved_document_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    original_file: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
-    proposed_file: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
-    final_file: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
-
-
 Index("ix_chat_repo_user_created", ChatMessage.repository_id, ChatMessage.user_id, ChatMessage.created_at)
 Index("ix_documents_repo_uploaded", Document.repository_id, Document.uploaded_at)
-Index("ix_draft_user_created", DraftTask.user_id, DraftTask.created_at)
-Index("ix_revision_user_created", RevisionTask.user_id, RevisionTask.created_at)

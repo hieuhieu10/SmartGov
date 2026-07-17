@@ -369,20 +369,15 @@ class RepositoryService:
     async def upload_document(self, repo_id: str, user_id: str,
                               filename: str, content: bytes,
                               file_type: str = "",
+                              folder_key: str = "draft",
                               current_user: dict = None) -> dict:
         """
         Upload a document to a repository:
         1. Save file to disk
         2. Save record to database
-        3. Convert to Markdown through AI and store in PostgreSQL
-           or upload to NotebookLM (notebooklm engine)
+        3. Return immediately; background processing handles AI work
         """
-        repo = await self.verify_ownership(repo_id, user_id)
-
-        # Resolve AI engine for this user
-        use_self_hosted = is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
-        if not use_self_hosted:
-            repo = await self.ensure_notebooklm_session_current(repo, user_id)
+        await self.verify_ownership(repo_id, user_id)
 
         doc_id = str(uuid.uuid4())
         safe_filename = f"{doc_id}_{filename}"
@@ -402,15 +397,50 @@ class RepositoryService:
             stored_path=stored_path,
             file_size=len(content),
             file_type=file_type,
+            folder_key=folder_key,
             notebooklm_source_id=None,
             doc_id=doc_id,
             processing_status="processing",
             progress_message="Đang chuyển đổi tài liệu",
         )
 
-        # Process document based on engine. Even in NotebookLM mode, also keep
-        # markdown content ready for self-hosted fallback.
+        return doc
+
+    async def process_document(
+        self,
+        repo_id: str,
+        doc_id: str,
+        user_id: str,
+        current_user: dict = None,
+    ) -> None:
+        """
+        Process a saved document after the upload response has returned.
+
+        Even in NotebookLM mode, also keep markdown content ready for
+        self-hosted fallback.
+        """
+        doc = await db.get_document_by_id(doc_id)
+        if not doc:
+            logger.warning("Skipping processing for missing document: %s", doc_id)
+            return
+
+        repo = await self.verify_ownership(repo_id, user_id)
+        if doc["repository_id"] != repo_id:
+            logger.warning(
+                "Skipping processing for document %s outside repo %s",
+                doc_id,
+                repo_id,
+            )
+            return
+
+        filename = doc["filename"]
+        stored_path = doc["stored_path"]
+        use_self_hosted = is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
+
         try:
+            if not use_self_hosted:
+                repo = await self.ensure_notebooklm_session_current(repo, user_id)
+
             if use_self_hosted:
                 # Self-hosted: AI converts; BE persists the returned markdown.
                 from app.services.ai_client import ai_client as document_converter
@@ -429,8 +459,6 @@ class RepositoryService:
                     error_message="",
                     processed_at=datetime.now().isoformat(),
                 )
-                doc["processing_status"] = "completed"
-                doc["progress_message"] = f"Đã chuyển đổi xong ({len(markdown)} ký tự)"
             else:
                 markdown = ""
                 try:
@@ -464,11 +492,6 @@ class RepositoryService:
                     error_message="",
                     processed_at=datetime.now().isoformat(),
                 )
-                doc["processing_status"] = "completed"
-                doc["progress_message"] = (
-                    f"Đã xử lý xong tài liệu, sẵn sàng trên Server 2 ({len(markdown)} ký tự)"
-                    if markdown else "Đã xử lý xong tài liệu"
-                )
 
         except Exception as e:
             logger.error(f"Document processing failed for {filename}: {e}")
@@ -482,10 +505,7 @@ class RepositoryService:
                         error_message=str(e),
                         processed_at=datetime.now().isoformat(),
                     )
-                    doc["processing_status"] = "completed"
-                    doc["progress_message"] = "Server 1 lỗi, đã chuyển sang Server 2"
-                    doc["error_message"] = str(e)
-                    return doc
+                    return
                 except Exception as fallback_error:
                     logger.error("Fallback conversion also failed for %s: %s", filename, fallback_error)
 
@@ -495,11 +515,6 @@ class RepositoryService:
                 progress_message="Xử lý tài liệu thất bại",
                 error_message=str(e),
             )
-            doc["processing_status"] = "failed"
-            doc["progress_message"] = "Xử lý tài liệu thất bại"
-            doc["error_message"] = str(e)
-
-        return doc
 
     async def delete_document(self, repo_id: str, doc_id: str, user_id: str,
                                current_user: dict = None):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -14,17 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import settings
 from app.db_models import (
-    AudioTask,
     ChatMessage,
     Department,
     Document,
-    DocumentTemplate,
-    DraftTask,
     Organization,
     Repository,
     RepositoryCategory,
-    RevisionTask,
-    TemplateTask,
     User,
 )
 
@@ -38,17 +32,6 @@ def _uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
     if value in (None, ""):
         return None
     return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-
-
-def _json(value: Any, fallback: Any) -> Any:
-    if value is None:
-        return fallback
-    if isinstance(value, str):
-        try:
-            return json.loads(value)
-        except (TypeError, ValueError):
-            return fallback
-    return value
 
 
 def _dict(obj: Any) -> Optional[dict]:
@@ -498,224 +481,6 @@ async def delete_chat_history(repository_id: str, user_id: str) -> None:
                 ChatMessage.user_id == _uuid(user_id),
             )
         )
-
-
-# Generic task helpers
-async def create_audio_task(task_id: str, user_id: str, filename: str) -> dict:
-    async with SessionLocal.begin() as session:
-        obj = AudioTask(id=_uuid(task_id), user_id=_uuid(user_id), filename=filename)
-        session.add(obj)
-        await session.flush()
-        return _dict(obj)
-
-
-async def get_audio_tasks_by_user(user_id: str) -> list[dict]:
-    async with SessionLocal() as session:
-        return [_dict(row) for row in (await session.scalars(
-            select(AudioTask).where(AudioTask.user_id == _uuid(user_id)).order_by(AudioTask.created_at.desc())
-        )).all()]
-
-
-async def get_audio_task_by_id(task_id: str) -> Optional[dict]:
-    return await _get(AudioTask, task_id)
-
-
-async def delete_audio_task(task_id: str) -> None:
-    await _delete(AudioTask, task_id)
-
-
-async def update_audio_task(task_id: str, **kwargs) -> Optional[dict]:
-    return await _update(AudioTask, task_id, kwargs)
-
-
-async def create_template(
-    template_id: str,
-    user_id: str,
-    name: str,
-    template_file: str,
-    description: str = "",
-    **kwargs,
-) -> dict:
-    values = dict(kwargs)
-    values["placeholders"] = _json(values.get("placeholders"), [])
-    values["template_structure"] = _json(values.get("template_structure"), {})
-    async with SessionLocal.begin() as session:
-        obj = DocumentTemplate(
-            id=_uuid(template_id),
-            user_id=_uuid(user_id),
-            name=name,
-            description=description,
-            template_file=template_file,
-            **values,
-        )
-        session.add(obj)
-        await session.flush()
-        return _dict(obj)
-
-
-async def get_templates_by_user(user_id: str) -> list[dict]:
-    async with SessionLocal() as session:
-        return [_dict(row) for row in (await session.scalars(
-            select(DocumentTemplate)
-            .where(DocumentTemplate.user_id == _uuid(user_id))
-            .order_by(DocumentTemplate.created_at.desc())
-        )).all()]
-
-
-async def get_template_by_id(template_id: str) -> Optional[dict]:
-    return await _get(DocumentTemplate, template_id)
-
-
-async def update_template(template_id: str, **kwargs) -> Optional[dict]:
-    if "placeholders" in kwargs:
-        kwargs["placeholders"] = _json(kwargs["placeholders"], [])
-    if "template_structure" in kwargs:
-        kwargs["template_structure"] = _json(kwargs["template_structure"], {})
-    return await _update(DocumentTemplate, template_id, kwargs)
-
-
-async def delete_template(template_id: str) -> None:
-    await _delete(DocumentTemplate, template_id)
-
-
-async def create_template_task(task_id: str, template_id: str, user_id: str) -> dict:
-    async with SessionLocal.begin() as session:
-        obj = TemplateTask(id=_uuid(task_id), template_id=_uuid(template_id), user_id=_uuid(user_id))
-        session.add(obj)
-        await session.flush()
-        return _dict(obj)
-
-
-async def get_template_task_by_id(task_id: str) -> Optional[dict]:
-    return await _get(TemplateTask, task_id)
-
-
-async def update_template_task(task_id: str, **kwargs) -> Optional[dict]:
-    return await _update(TemplateTask, task_id, kwargs)
-
-
-async def get_template_tasks_by_template(template_id: str) -> list[dict]:
-    async with SessionLocal() as session:
-        return [_dict(row) for row in (await session.scalars(
-            select(TemplateTask)
-            .where(TemplateTask.template_id == _uuid(template_id))
-            .order_by(TemplateTask.created_at.desc())
-            .limit(20)
-        )).all()]
-
-
-async def delete_template_task(task_id: str) -> None:
-    await _delete(TemplateTask, task_id)
-
-
-async def create_draft_task(
-    task_id: str,
-    user_id: str,
-    repo_id: str,
-    document_type: str,
-    input_data: dict | str = None,
-    **kwargs,
-) -> dict:
-    async with SessionLocal.begin() as session:
-        obj = DraftTask(
-            id=_uuid(task_id),
-            user_id=_uuid(user_id),
-            repo_id=_uuid(repo_id),
-            document_type=document_type,
-            input_data=_json(input_data, {}),
-            draft_data=_json(kwargs.pop("draft_data", None), {}),
-            **kwargs,
-        )
-        session.add(obj)
-        await session.flush()
-        return _dict(obj)
-
-
-async def get_draft_task_by_id(task_id: str) -> Optional[dict]:
-    return await _get(DraftTask, task_id)
-
-
-async def update_draft_task(task_id: str, **kwargs) -> Optional[dict]:
-    for field in ("input_data", "draft_data"):
-        if field in kwargs:
-            kwargs[field] = _json(kwargs[field], {})
-    return await _update(DraftTask, task_id, kwargs)
-
-
-async def get_draft_tasks_by_user(user_id: str) -> list[dict]:
-    async with SessionLocal() as session:
-        return [_dict(row) for row in (await session.scalars(
-            select(DraftTask)
-            .where(DraftTask.user_id == _uuid(user_id))
-            .order_by(DraftTask.created_at.desc())
-            .limit(20)
-        )).all()]
-
-
-async def delete_draft_task(task_id: str) -> None:
-    await _delete(DraftTask, task_id)
-
-
-async def create_revision_task(
-    task_id: str,
-    user_id: str,
-    repo_id: str | None = None,
-    title: str = "",
-    **kwargs,
-) -> dict:
-    for field, fallback in (
-        ("input_files", {}),
-        ("original_document_data", {}),
-        ("proposed_document_data", {}),
-        ("approved_document_data", {}),
-        ("extracted_comments", []),
-        ("diff_data", []),
-    ):
-        if field in kwargs:
-            kwargs[field] = _json(kwargs[field], fallback)
-    async with SessionLocal.begin() as session:
-        obj = RevisionTask(
-            id=_uuid(task_id),
-            user_id=_uuid(user_id),
-            repo_id=_uuid(repo_id),
-            title=title,
-            **kwargs,
-        )
-        session.add(obj)
-        await session.flush()
-        return _dict(obj)
-
-
-async def get_revision_task_by_id(task_id: str) -> Optional[dict]:
-    return await _get(RevisionTask, task_id)
-
-
-async def get_revision_tasks_by_user(user_id: str) -> list[dict]:
-    async with SessionLocal() as session:
-        return [_dict(row) for row in (await session.scalars(
-            select(RevisionTask)
-            .where(RevisionTask.user_id == _uuid(user_id))
-            .order_by(RevisionTask.created_at.desc())
-            .limit(50)
-        )).all()]
-
-
-async def update_revision_task(task_id: str, **kwargs) -> Optional[dict]:
-    for field, fallback in (
-        ("input_files", {}),
-        ("original_document_data", {}),
-        ("proposed_document_data", {}),
-        ("approved_document_data", {}),
-        ("extracted_comments", []),
-        ("diff_data", []),
-    ):
-        if field in kwargs:
-            kwargs[field] = _json(kwargs[field], fallback)
-    return await _update(RevisionTask, task_id, kwargs)
-
-
-async def delete_revision_task(task_id: str) -> None:
-    await _delete(RevisionTask, task_id)
 
 
 # Organizations and departments
