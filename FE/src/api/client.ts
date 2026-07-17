@@ -142,6 +142,38 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export interface DocumentDatasetWordPayload {
+  document_data: Record<string, any>;
+  filename?: string;
+}
+
+export interface RevisionTask {
+  id: string;
+  title: string;
+  status: string;
+  progress_message: string;
+  error_message: string;
+  reject_reason: string;
+  output_ready: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RevisionReviewDocument {
+  document_data: Record<string, any>;
+  preview_url: string;
+}
+
+export interface RevisionReview {
+  task_id: string;
+  status: string;
+  title: string;
+  original: RevisionReviewDocument;
+  proposed: RevisionReviewDocument;
+  changes: Array<Record<string, any>>;
+  extracted_comments: Array<Record<string, any>>;
+}
+
 // ─── Auth helpers ───────────────────────────────────────────────────
 export function getStoredUser(): UserInfo | null {
   const raw = localStorage.getItem('sttnb_user');
@@ -227,11 +259,22 @@ export const ApiClient = {
     }).then(r => r.data);
   },
 
+  replaceDocument: (repoId: string, docId: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.put<Document>(`/repositories/${repoId}/documents/${docId}`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
+
   deleteDocument: (repoId: string, docId: string) =>
     api.delete(`/repositories/${repoId}/documents/${docId}`),
 
   getDocumentPreview: (repoId: string, docId: string) =>
     api.get(`/repositories/${repoId}/documents/${docId}/preview`, { responseType: 'text' }).then(r => r.data),
+
+  getDocumentFile: (repoId: string, docId: string) =>
+    api.get<Blob>(`/repositories/${repoId}/documents/${docId}/file`, { responseType: 'blob' }).then(r => r.data),
 
   getDatasetWordPreview: (payload: DocumentDatasetWordPayload) =>
     api.post('/document-datasets/word/preview', payload, { responseType: 'text' }).then(r => r.data),

@@ -406,6 +406,58 @@ class RepositoryService:
 
         return doc
 
+    async def replace_document_file(
+        self,
+        repo_id: str,
+        doc_id: str,
+        user_id: str,
+        filename: str,
+        content: bytes,
+        file_type: str = "",
+        current_user: dict = None,
+    ) -> dict:
+        """Replace an existing document file and reset its processed data."""
+        repo = await self.verify_ownership(repo_id, user_id)
+        doc = await db.get_document_by_id(doc_id)
+        if not doc or doc["repository_id"] != repo_id:
+            raise ValueError("Tài liệu không tồn tại trong kho này")
+
+        use_self_hosted = is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
+        if not use_self_hosted and repo.get("notebook_id") and doc.get("notebooklm_source_id"):
+            from app.services.ai_client import ai_client as notebooklm_service
+            try:
+                await notebooklm_service.delete_source(
+                    repo["notebook_id"], doc["notebooklm_source_id"]
+                )
+            except Exception as e:
+                logger.warning("Could not delete old source from NotebookLM: %s", e)
+
+        safe_filename = f"{doc_id}_{Path(filename).name}"
+        repo_dir = Path(settings.repo_files_dir) / repo_id
+        repo_dir.mkdir(parents=True, exist_ok=True)
+        stored_path = str(repo_dir / safe_filename)
+
+        old_path = Path(doc["stored_path"])
+        with open(stored_path, "wb") as f:
+            f.write(content)
+        if old_path != Path(stored_path) and old_path.exists():
+            try:
+                old_path.unlink()
+            except Exception as e:
+                logger.warning("Could not delete replaced file %s: %s", old_path, e)
+
+        updated = await db.update_document_file(
+            doc_id=doc_id,
+            filename=filename,
+            stored_path=stored_path,
+            file_size=len(content),
+            file_type=file_type,
+        )
+        if not updated:
+            raise ValueError("Tài liệu không tồn tại trong kho này")
+        logger.info("Replaced document file: %s (%s bytes)", doc_id, len(content))
+        return updated
+
     async def process_document(
         self,
         repo_id: str,

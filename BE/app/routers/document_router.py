@@ -3,9 +3,11 @@ STTNB Document Router — Upload and manage documents in repositories.
 """
 
 import logging
+import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse
 
 from app.auth import get_current_user, can_access_repo
 from app.config import settings
@@ -162,6 +164,83 @@ async def list_documents(
     return [_build_document_response(d) for d in docs]
 
 
+@router.put("/{doc_id}", response_model=DocumentResponse)
+async def replace_document(
+    repo_id: str,
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Thay thế file gốc của tài liệu và xử lý lại dữ liệu nội bộ."""
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thiếu tên file")
+
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in settings.allowed_doc_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Định dạng file không được hỗ trợ: {file_ext}. "
+                   f"Hỗ trợ: {', '.join(settings.allowed_doc_extensions)}",
+        )
+
+    repo = await can_access_repo(repo_id, current_user)
+    if not repo.get("is_owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ sở hữu kho mới có quyền sửa tài liệu",
+        )
+
+    old_doc = await db.get_document_by_id(doc_id)
+    if not old_doc or old_doc.get("repository_id") != repo_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tài liệu không tồn tại")
+
+    content = await file.read()
+    if len(content) > settings.max_doc_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File quá lớn. Giới hạn: {settings.max_doc_upload_mb}MB",
+        )
+
+    current_total = await db.get_user_total_document_bytes(current_user["id"])
+    projected_total = current_total - int(old_doc.get("file_size") or 0) + len(content)
+    if projected_total > settings.max_user_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                "Vượt giới hạn tổng dung lượng upload của tài khoản. "
+                f"Đã dùng: {_format_bytes(current_total)}; "
+                f"file mới: {_format_bytes(len(content))}; "
+                f"giới hạn: {_format_bytes(settings.max_user_upload_bytes)}."
+            ),
+        )
+
+    try:
+        doc = await repository_service.replace_document_file(
+            repo_id=repo_id,
+            doc_id=doc_id,
+            user_id=current_user["id"],
+            filename=file.filename,
+            content=content,
+            file_type=file.content_type or "",
+            current_user=current_user,
+        )
+        background_tasks.add_task(
+            repository_service.process_document,
+            repo_id,
+            doc["id"],
+            current_user["id"],
+            current_user,
+        )
+        return _build_document_response(doc)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+
 @router.get("/{doc_id}/preview", response_class=HTMLResponse)
 async def preview_document(
     repo_id: str,
@@ -186,6 +265,32 @@ async def preview_document(
         )
 
     return HTMLResponse(render_docx_preview_html(file_path))
+
+
+@router.get("/{doc_id}/file")
+async def view_document_file(
+    repo_id: str,
+    doc_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return the original uploaded file after repository access is checked."""
+    await can_access_repo(repo_id, current_user)
+
+    doc = await db.get_document_by_id(doc_id)
+    if not doc or doc.get("repository_id") != repo_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tài liệu không tồn tại")
+
+    file_path = Path(doc.get("stored_path") or "")
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file tài liệu")
+
+    media_type = doc.get("file_type") or mimetypes.guess_type(doc.get("filename") or file_path.name)[0]
+    return FileResponse(
+        path=file_path,
+        media_type=media_type or "application/octet-stream",
+        filename=doc.get("filename") or file_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
