@@ -5,7 +5,7 @@ STTNB Document Router — Upload and manage documents in repositories.
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.auth import get_current_user, can_access_repo
 from app.config import settings
@@ -65,6 +65,7 @@ def _build_document_response(doc: dict) -> DocumentResponse:
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     repo_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     folder_key: str = Form("draft"),
     current_user: dict = Depends(get_current_user),
@@ -130,6 +131,13 @@ async def upload_document(
             file_type=file.content_type or "",
             folder_key=folder_key,
             current_user=current_user,
+        )
+        background_tasks.add_task(
+            repository_service.process_document,
+            repo_id,
+            doc["id"],
+            current_user["id"],
+            current_user,
         )
         return _build_document_response(doc)
     except ValueError as e:
