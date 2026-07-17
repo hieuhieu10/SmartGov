@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from pydantic import BaseModel, BeforeValidator, Field
 
@@ -416,6 +416,81 @@ class DocumentResponse(BaseModel):
     chunk_count: int = 0
     processed_at: Optional[DateTimeStr] = None
     uploaded_at: DateTimeStr
+
+
+class DatasetField(BaseModel):
+    """A table-like field/column extracted from a document."""
+    key: str = Field(description="Stable key for FE binding, vd: noi_dung_gop_y")
+    label: str = Field(description="Column label shown to users")
+    value_type: str = Field(default="text", description="Data type hint for FE rendering")
+    required: bool = Field(default=False, description="Whether the value is expected")
+    description: str = Field(default="", description="Short explanation of this field")
+
+
+class DocumentDatasetResponse(BaseModel):
+    """Structured dataset extracted from an uploaded document."""
+    title: str = Field(description="Document title or extracted trich yeu")
+    content: list[str] = Field(
+        default_factory=list,
+        description="Main document body, usually document_data.noi_dung",
+    )
+    fields: list[DatasetField] = Field(
+        default_factory=list,
+        description="Columns found or expected in document tables",
+    )
+    rows: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="Table rows keyed by fields[].key",
+    )
+    document_data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw AI-style administrative document payload for storage/export",
+    )
+    source: str = Field(default="mock", description="mock | ai | manual")
+    filename: str = ""
+    message: str = ""
+
+
+class DocumentDatasetWordRequest(BaseModel):
+    """Request to render/export an AI-style administrative document JSON."""
+    document_data: dict[str, Any] = Field(
+        ...,
+        description="AI/toolnd30-compatible document JSON",
+    )
+    filename: str = Field(
+        default="van-ban.docx",
+        max_length=200,
+        description="Suggested output filename",
+    )
+
+
+class RevisionTaskResponse(BaseModel):
+    """Revision task summary for the review workflow."""
+    id: str
+    title: str
+    status: str
+    progress_message: str = ""
+    error_message: str = ""
+    reject_reason: str = ""
+    output_ready: bool = False
+    created_at: DateTimeStr
+    updated_at: DateTimeStr
+
+
+class RevisionReviewResponse(BaseModel):
+    """Data needed by FE to render original vs proposed review."""
+    task_id: str
+    status: str
+    title: str
+    original: dict[str, Any]
+    proposed: dict[str, Any]
+    changes: list[dict[str, Any]] = Field(default_factory=list)
+    extracted_comments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RevisionRejectRequest(BaseModel):
+    """Reason for rejecting a proposed revision."""
+    reason: str = Field(default="", max_length=2000)
 
 
 # ─── Chat Schemas ────────────────────────────────────────────────────
