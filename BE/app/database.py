@@ -6,6 +6,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Optional
 
 import bcrypt
@@ -18,6 +19,7 @@ from app.db_models import (
     ChatMessage,
     Department,
     Document,
+    DocumentChunk,
     DocumentTemplate,
     DraftTask,
     Organization,
@@ -63,6 +65,20 @@ def _dict(obj: Any) -> Optional[dict]:
 def _coerce_datetime(value: Any) -> Any:
     if isinstance(value, str):
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return value
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
     return value
 
 
@@ -381,6 +397,7 @@ async def create_document(
             repository_id=_uuid(repository_id),
             filename=filename,
             stored_path=stored_path,
+            folder_key=kwargs.pop("folder_key", repository_id),
             file_size=file_size,
             file_type=file_type,
             notebooklm_source_id=notebooklm_source_id,
@@ -448,6 +465,194 @@ async def delete_document(doc_id: str) -> None:
 
 async def update_document_markdown(doc_id: str, markdown_content: str) -> None:
     await _update(Document, doc_id, {"markdown_content": markdown_content})
+
+
+async def replace_document_chunks(
+    document_id: str,
+    chunks: list[dict],
+) -> None:
+    async with SessionLocal.begin() as session:
+        await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == _uuid(document_id)))
+        for chunk in chunks:
+            session.add(
+                DocumentChunk(
+                    document_id=_uuid(document_id),
+                    chunk_index=int(chunk.get("chunk_index") or 0),
+                    header_path=str(chunk.get("header_path") or ""),
+                    section_label=str(chunk.get("section_label") or ""),
+                    page_label=str(chunk.get("page_label") or ""),
+                    citation_label=str(chunk.get("citation_label") or ""),
+                    chunk_text=str(chunk.get("chunk_text") or ""),
+                    embedding_model=str(chunk.get("embedding_model") or ""),
+                    embedding=list(chunk.get("embedding") or []),
+                    metadata_json=chunk.get("metadata") or {},
+                )
+            )
+
+
+async def get_document_chunks(document_id: str) -> list[dict]:
+    async with SessionLocal() as session:
+        rows = (
+            await session.scalars(
+                select(DocumentChunk)
+                .where(DocumentChunk.document_id == _uuid(document_id))
+                .order_by(DocumentChunk.chunk_index.asc())
+            )
+        ).all()
+        return [_dict(row) for row in rows]
+
+
+async def count_document_chunks(document_id: str) -> int:
+    async with SessionLocal() as session:
+        return int(
+            await session.scalar(
+                select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == _uuid(document_id))
+            )
+            or 0
+        )
+
+
+async def get_documents_missing_chunks_by_repository(repository_id: str) -> list[dict]:
+    async with SessionLocal() as session:
+        query = (
+            select(Document)
+            .where(
+                Document.repository_id == _uuid(repository_id),
+                Document.markdown_content != "",
+                ~select(DocumentChunk.id)
+                .where(DocumentChunk.document_id == Document.id)
+                .exists(),
+            )
+            .order_by(Document.uploaded_at.desc())
+        )
+        return [_dict(row) for row in (await session.scalars(query)).all()]
+
+
+async def count_repository_chunks(repository_id: str) -> int:
+    async with SessionLocal() as session:
+        return int(
+            await session.scalar(
+                select(func.count(DocumentChunk.id))
+                .join(Document, Document.id == DocumentChunk.document_id)
+                .where(Document.repository_id == _uuid(repository_id))
+            )
+            or 0
+        )
+
+
+def _vector_literal(values: list[float]) -> str:
+    return "[" + ",".join(f"{float(value):.8f}" for value in values) + "]"
+
+
+async def search_document_chunks_hybrid(
+    repository_id: str,
+    query_text: str,
+    query_embedding: list[float],
+    *,
+    limit: int = 8,
+    vector_candidates: int = 30,
+    text_candidates: int = 30,
+) -> list[dict]:
+    if not query_embedding:
+        return []
+
+    sql = text(
+        """
+        WITH vector_matches AS (
+            SELECT
+                dc.id,
+                dc.document_id,
+                d.filename,
+                dc.chunk_index,
+                dc.header_path,
+                dc.section_label,
+                dc.page_label,
+                dc.citation_label,
+                dc.chunk_text,
+                dc.embedding_model,
+                dc.metadata,
+                dc.embedding <=> CAST(:query_embedding AS vector) AS vector_distance,
+                row_number() OVER (ORDER BY dc.embedding <=> CAST(:query_embedding AS vector)) AS vector_rank
+            FROM document_chunks dc
+            JOIN documents d ON d.id = dc.document_id
+            WHERE d.repository_id = CAST(:repository_id AS uuid)
+            ORDER BY dc.embedding <=> CAST(:query_embedding AS vector)
+            LIMIT :vector_candidates
+        ),
+        text_matches AS (
+            SELECT
+                dc.id,
+                dc.document_id,
+                d.filename,
+                dc.chunk_index,
+                dc.header_path,
+                dc.section_label,
+                dc.page_label,
+                dc.citation_label,
+                dc.chunk_text,
+                dc.embedding_model,
+                dc.metadata,
+                ts_rank_cd(
+                    to_tsvector('simple', coalesce(dc.header_path, '') || ' ' || coalesce(dc.chunk_text, '')),
+                    plainto_tsquery('simple', :query_text)
+                ) AS text_rank_score,
+                row_number() OVER (
+                    ORDER BY ts_rank_cd(
+                        to_tsvector('simple', coalesce(dc.header_path, '') || ' ' || coalesce(dc.chunk_text, '')),
+                        plainto_tsquery('simple', :query_text)
+                    ) DESC
+                ) AS text_rank
+            FROM document_chunks dc
+            JOIN documents d ON d.id = dc.document_id
+            WHERE d.repository_id = CAST(:repository_id AS uuid)
+              AND to_tsvector('simple', coalesce(dc.header_path, '') || ' ' || coalesce(dc.chunk_text, '')) @@
+                  plainto_tsquery('simple', :query_text)
+            ORDER BY text_rank_score DESC
+            LIMIT :text_candidates
+        ),
+        fused AS (
+            SELECT
+                coalesce(v.id, t.id) AS id,
+                coalesce(v.document_id, t.document_id) AS document_id,
+                coalesce(v.filename, t.filename) AS filename,
+                coalesce(v.chunk_index, t.chunk_index) AS chunk_index,
+                coalesce(v.header_path, t.header_path) AS header_path,
+                coalesce(v.section_label, t.section_label) AS section_label,
+                coalesce(v.page_label, t.page_label) AS page_label,
+                coalesce(v.citation_label, t.citation_label) AS citation_label,
+                coalesce(v.chunk_text, t.chunk_text) AS chunk_text,
+                coalesce(v.embedding_model, t.embedding_model) AS embedding_model,
+                coalesce(v.metadata, t.metadata) AS metadata,
+                v.vector_distance,
+                t.text_rank_score,
+                (coalesce(1.0 / (60 + v.vector_rank), 0.0) +
+                 coalesce(1.0 / (60 + t.text_rank), 0.0)) AS hybrid_score
+            FROM vector_matches v
+            FULL OUTER JOIN text_matches t ON t.id = v.id
+        )
+        SELECT *
+        FROM fused
+        ORDER BY hybrid_score DESC, vector_distance ASC NULLS LAST
+        LIMIT :limit
+        """
+    )
+    params = {
+        "repository_id": str(repository_id),
+        "query_text": query_text,
+        "query_embedding": _vector_literal(query_embedding),
+        "limit": int(limit),
+        "vector_candidates": int(vector_candidates),
+        "text_candidates": int(text_candidates),
+    }
+    async with SessionLocal() as session:
+        rows = (await session.execute(sql, params)).mappings().all()
+        return [
+            {
+                key: _json_safe(value)
+                for key, value in dict(row).items()
+            }
+            for row in rows
+        ]
 
 
 async def get_documents_markdown_by_repository(

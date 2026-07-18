@@ -272,6 +272,14 @@ export const ApiClient = {
     }).then(r => r.data);
   },
 
+  convertDocument: (repoId: string, docId: string) =>
+    api.post<Document>(`/repositories/${repoId}/documents/${docId}/convert`).then(r => r.data),
+
+  downloadDocumentMarkdown: (repoId: string, docId: string) =>
+    api.get<Blob>(`/repositories/${repoId}/documents/${docId}/markdown`, {
+      responseType: 'blob',
+    }).then(r => r.data),
+
   deleteDocument: (repoId: string, docId: string) =>
     api.delete(`/repositories/${repoId}/documents/${docId}`),
 

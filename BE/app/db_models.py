@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from pgvector.sqlalchemy import Vector
+
+from app.config import settings
 
 
 def utcnow() -> datetime:
@@ -98,6 +101,7 @@ class Document(Base):
     )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     stored_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    folder_key: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     file_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     notebooklm_source_id: Mapped[str | None] = mapped_column(String(255))
@@ -108,6 +112,24 @@ class Document(Base):
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    header_path: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    section_label: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    page_label: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    citation_label: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(settings.embedding_dimensions), nullable=False)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class ChatMessage(Base):
@@ -188,5 +210,6 @@ class DraftTask(Base, TimestampMixin):
 
 
 Index("ix_chat_repo_user_created", ChatMessage.repository_id, ChatMessage.user_id, ChatMessage.created_at)
+Index("ix_document_chunks_doc_index", DocumentChunk.document_id, DocumentChunk.chunk_index, unique=True)
 Index("ix_documents_repo_uploaded", Document.repository_id, Document.uploaded_at)
 Index("ix_draft_user_created", DraftTask.user_id, DraftTask.created_at)

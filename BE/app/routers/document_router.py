@@ -3,14 +3,18 @@ STTNB Document Router — Upload and manage documents in repositories.
 """
 
 import logging
+from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import Response
 
 from app.auth import get_current_user, can_access_repo
 from app.config import settings
 from app import database as db
 from app.models import DocumentResponse
+from app.services.ai_client import AIServiceError, ai_client
 from app.services.repository_service import repository_service
 
 logger = logging.getLogger(__name__)
@@ -57,6 +61,12 @@ def _build_document_response(doc: dict) -> DocumentResponse:
         processed_at=doc.get("processed_at"),
         uploaded_at=doc["uploaded_at"],
     )
+
+
+def _markdown_filename(filename: str) -> str:
+    stem = Path(filename).stem or "document"
+    safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".", " ") else "_" for ch in stem).strip()
+    return f"{safe or 'document'}.md"
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -139,6 +149,101 @@ async def list_documents(
 
     docs = await db.get_documents_by_repository(repo_id)
     return [_build_document_response(d) for d in docs]
+
+
+@router.post("/{doc_id}/convert", response_model=DocumentResponse)
+async def convert_document_to_markdown(
+    repo_id: str,
+    doc_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Re-run document conversion/OCR and persist Markdown content."""
+    repo = await can_access_repo(repo_id, current_user)
+    if not repo.get("is_owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ sở hữu kho mới có quyền xử lý lại tài liệu",
+        )
+
+    doc = await db.get_document_by_id(doc_id)
+    if not doc or doc["repository_id"] != repo_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tài liệu không tồn tại")
+
+    stored_path = doc.get("stored_path") or ""
+    if not stored_path or not Path(stored_path).exists():
+        await db.update_document_processing(
+            doc_id,
+            status="failed",
+            progress_message="Không tìm thấy file nội bộ để OCR",
+            error_message="Stored file is missing",
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File nội bộ không tồn tại")
+
+    try:
+        await db.update_document_processing(
+            doc_id,
+            status="processing",
+            progress_message="Đang OCR/chuyển đổi sang Markdown",
+            error_message="",
+        )
+        markdown = await ai_client.convert_and_store(doc_id, stored_path)
+        updated = await db.update_document_processing(
+            doc_id,
+            status="completed",
+            progress_message=f"Đã OCR/chuyển đổi xong ({len(markdown)} ký tự)",
+            error_message="",
+            processed_at=datetime.now().isoformat(),
+        )
+        return _build_document_response(updated or {**doc, "processing_status": "completed"})
+    except AIServiceError as exc:
+        await db.update_document_processing(
+            doc_id,
+            status="failed",
+            progress_message="OCR/chuyển đổi tài liệu thất bại",
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except Exception as exc:
+        await db.update_document_processing(
+            doc_id,
+            status="failed",
+            progress_message="OCR/chuyển đổi tài liệu thất bại",
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get("/{doc_id}/markdown")
+async def download_document_markdown(
+    repo_id: str,
+    doc_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Download the Markdown text stored for a processed document."""
+    await can_access_repo(repo_id, current_user)
+
+    doc = await db.get_document_by_id(doc_id)
+    if not doc or doc["repository_id"] != repo_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tài liệu không tồn tại")
+
+    markdown = (doc.get("markdown_content") or "").strip()
+    if not markdown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tài liệu chưa có nội dung Markdown. Vui lòng OCR/chuyển đổi lại.",
+        )
+
+    filename = _markdown_filename(doc["filename"])
+    encoded_filename = quote(filename)
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{encoded_filename}"
+            )
+        },
+    )
 
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)

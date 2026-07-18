@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ApiClient } from '../api/client';
 import type { Repository, Document, RepositoryCategory } from '../api/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Database, Plus, Trash2, UploadCloud, File, ChevronRight, ChevronLeft, FileText, X, Globe, Lock, Share2, Loader2, CheckCircle2, Folder, FolderPlus, Pencil } from 'lucide-react';
+import { Database, Plus, Trash2, UploadCloud, File, ChevronRight, ChevronLeft, FileText, X, Globe, Lock, Share2, Loader2, CheckCircle2, Folder, FolderPlus, Pencil, Download, RefreshCw } from 'lucide-react';
 
 export function RepositoryManager() {
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -10,6 +10,7 @@ export function RepositoryManager() {
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [processingDocId, setProcessingDocId] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [newRepoName, setNewRepoName] = useState('');
   const [newRepoDesc, setNewRepoDesc] = useState('');
@@ -259,6 +260,38 @@ export function RepositoryManager() {
       fetchDocs(selectedRepo.id);
       fetchRepos();
     } catch (err) { console.error(err); }
+  };
+
+  const handleConvertDoc = async (docId: string) => {
+    if (!selectedRepo || processingDocId) return;
+    setProcessingDocId(docId);
+    try {
+      await ApiClient.convertDocument(selectedRepo.id, docId);
+      await fetchDocs(selectedRepo.id);
+      await fetchRepos();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Lỗi OCR/chuyển đổi tài liệu');
+    } finally {
+      setProcessingDocId('');
+    }
+  };
+
+  const handleDownloadMarkdown = async (doc: Document) => {
+    if (!selectedRepo) return;
+    try {
+      const blob = await ApiClient.downloadDocumentMarkdown(selectedRepo.id, doc.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const stem = doc.filename.replace(/\.[^/.]+$/, '') || 'document';
+      link.href = url;
+      link.download = `${stem}.md`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Chưa tải được file Markdown');
+    }
   };
 
   const formatSize = (bytes: number) => {
@@ -654,13 +687,33 @@ export function RepositoryManager() {
                             {status.icon}
                             {status.label}
                           </span>
+                        {doc.processing_status === 'completed' && (
+                        <button
+                          onClick={() => handleDownloadMarkdown(doc)}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          title="Tải Markdown"
+                        >
+                          <Download size={14} />
+                        </button>
+                        )}
                         {!selectedRepo.is_shared && (
+                        <>
+                        <button
+                          onClick={() => handleConvertDoc(doc.id)}
+                          disabled={processingDocId === doc.id}
+                          className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                          title="OCR lại"
+                        >
+                          {processingDocId === doc.id ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                        </button>
                         <button
                           onClick={() => handleDeleteDoc(doc.id)}
                           className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          title="Xóa tài liệu"
                         >
                           <Trash2 size={14} />
                         </button>
+                        </>
                         )}
                         </div>
                       </div>
