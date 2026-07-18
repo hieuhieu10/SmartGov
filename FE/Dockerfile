@@ -1,14 +1,19 @@
-# Stage 1: Build the React application
+# ── Stage 1: build React app ────────────────────────────────────────────────
 FROM node:22-alpine AS build
 WORKDIR /app
+
 COPY package*.json ./
-RUN npm ci
+# Một lần npm install duy nhất (thay cho npm ci + rm -rf + install lại của bản
+# cũ): npm install tự bổ sung binding native musl/Alpine còn thiếu trong
+# lockfile sinh trên macOS (rolldown/vite). Cache mount giúp rebuild chỉ tải
+# package thiếu.
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --no-audit --no-fund
+
 COPY . .
-# Rebuild native bindings for musl/Alpine (fixes rolldown binding issue with Vite 8)
-RUN rm -rf node_modules package-lock.json && npm install
 RUN npm run build
 
-# Stage 2: Serve with Nginx
+# ── Stage 2: serve bằng Nginx ───────────────────────────────────────────────
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

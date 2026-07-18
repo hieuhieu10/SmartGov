@@ -30,20 +30,19 @@ async def chat(
     ```
     data: {"type": "chunk", "content": "Theo tài liệu "}
     data: {"type": "chunk", "content": "trong kho, "}
+    data: {"type": "chart", "charts": [...]}  # optional
     data: {"type": "done", "content": ""}
     ```
     """
     # Verify access (owner or shared)
-    repo = await can_access_repo(repo_id, current_user)
+    await can_access_repo(repo_id, current_user)
 
     # Get full answer from AI engine
     try:
-        full_answer = await chat_service.ask_question(
+        full_answer, charts = await chat_service.ask_question(
             repo_id=repo_id,
             user_id=current_user["id"],
-            notebook_id=repo.get("notebook_id", ""),
             question=req.message,
-            current_user=current_user,
         )
     except Exception as e:
         raise HTTPException(
@@ -53,7 +52,7 @@ async def chat(
 
     # Return SSE stream
     return EventSourceResponse(
-        chat_service.stream_response(full_answer),
+        chat_service.stream_response(full_answer, charts),
         media_type="text/event-stream",
     )
 

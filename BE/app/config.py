@@ -35,12 +35,7 @@ class Settings(BaseSettings):
     data_dir: str = str(BASE_DIR / "data")
     user_templates_dir: str = str(BASE_DIR / "user_templates")
 
-    # AI Engine: "notebooklm" | "self_hosted"
-    ai_engine: str = "notebooklm"
-
-    # Server 1 persistent notebook capacity. When reached, the least recently
-    # used repository notebook is evicted and rebuilt lazily when needed again.
-    notebooklm_max_notebooks: int = 450
+    ai_engine: str = "self_hosted"
 
     # PostgreSQL (owned exclusively by BE)
     database_url: str = "postgresql+asyncpg://officeai:officeai@postgres:5432/officeai"
@@ -51,10 +46,12 @@ class Settings(BaseSettings):
     # Internal AI service
     ai_service_url: str = "http://ai:7000"
     ai_internal_token: str = ""
-    embedding_dimensions: int = 384
+    embedding_dimensions: int = 768
     rag_top_k: int = 8
     rag_vector_candidates: int = 30
     rag_text_candidates: int = 30
+    rag_vector_weight: float = 0.6
+    rag_text_weight: float = 1.4
 
     # JWT Authentication
     jwt_secret: str = "change-me-in-production-sttnb-2026"

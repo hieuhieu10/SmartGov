@@ -29,7 +29,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 from app.config import settings
-from app.models import MeetingMinutes, DocumentType
+from app.models import DocumentType
 
 logger = logging.getLogger(__name__)
 
@@ -552,104 +552,6 @@ def _save_doc(doc, output_path: str) -> str:
 class WordExporter:
     """Export documents in VN administrative format (NĐ 30/2020/NĐ-CP)."""
 
-    # ─── Meeting Minutes (Biên bản họp) ──────────────────────────────
-
-    def export(self, minutes: MeetingMinutes, output_path: str) -> str:
-        """Generate Word document from MeetingMinutes data."""
-        doc = _setup_document()
-
-        # HEADER
-        self._add_meeting_header(doc, minutes)
-
-        # TIÊU ĐỀ: BIÊN BẢN
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "BIÊN BẢN", bold=True, size=14)
-
-        if minutes.tieu_de_noi_dung:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            _add_run(p, minutes.tieu_de_noi_dung, bold=True, size=14)
-
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "________", size=14)
-
-        # MỞ ĐẦU
-        if minutes.mo_dau:
-            _add_paragraph_text(doc, minutes.mo_dau)
-
-        # I. THÀNH PHẦN
-        _add_section_title(doc, "I. THÀNH PHẦN THAM DỰ")
-
-        if minutes.chu_tri:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            p.paragraph_format.first_line_indent = Cm(1.27)
-            _add_run(p, "1. Chủ trì: ", bold=True, size=14)
-            _add_run(p, minutes.chu_tri, size=14)
-
-        if minutes.thu_ky:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            p.paragraph_format.first_line_indent = Cm(1.27)
-            _add_run(p, "2. Thư ký: ", bold=True, size=14)
-            _add_run(p, minutes.thu_ky, size=14)
-
-        if minutes.thanh_vien:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            p.paragraph_format.first_line_indent = Cm(1.27)
-            start_num = 3 if minutes.thu_ky else 2
-            _add_run(p, f"{start_num}. Các thành viên tham dự:", bold=True, size=14)
-
-            for member in minutes.thanh_vien:
-                _add_paragraph_text(doc, member)
-
-        # II. NỘI DUNG
-        _add_section_title(doc, "II. NỘI DUNG CUỘC HỌP")
-
-        if minutes.dan_nhap_noi_dung:
-            _add_paragraph_text(doc, minutes.dan_nhap_noi_dung)
-
-        for section in minutes.noi_dung:
-            _add_paragraph_text(doc, section.tieu_de_muc, bold=True)
-            if section.mo_ta:
-                _add_paragraph_text(doc, section.mo_ta)
-            for detail in section.chi_tiet:
-                p = doc.add_paragraph()
-                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                if detail.strip().startswith("+"):
-                    p.paragraph_format.first_line_indent = Cm(1.27)
-                    p.paragraph_format.left_indent = Cm(0.63)
-                else:
-                    p.paragraph_format.first_line_indent = Cm(1.27)
-                _add_run(p, detail, size=14)
-            if section.luu_y:
-                p = doc.add_paragraph()
-                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                p.paragraph_format.first_line_indent = Cm(1.27)
-                _add_run(p, "Lưu ý: ", bold=True, italic=True, size=14)
-                _add_run(p, section.luu_y, italic=True, size=14)
-
-        # III. KẾT LUẬN
-        if minutes.ket_luan:
-            _add_section_title(doc, "III. KẾT LUẬN CỦA CHỦ TRÌ")
-            _add_paragraph_text(doc, minutes.ket_luan)
-
-        if minutes.ket_thuc:
-            _add_paragraph_text(doc, minutes.ket_thuc)
-
-        # KÝ TÊN
-        doc.add_paragraph()
-        self._add_meeting_signature(doc, minutes)
-
-        # NƠI NHẬN
-        _add_noi_nhan(doc, minutes.noi_nhan)
-
-        return _save_doc(doc, output_path)
-
     # ─── Administrative Documents (NĐ 30/2020) ──────────────────────
 
     def export_administrative_document(self, doc_type: DocumentType,
@@ -1082,90 +984,6 @@ class WordExporter:
         _add_noi_nhan(doc, ["Như trên;", "Lưu: VT."])
 
         return _save_doc(doc, output_path)
-
-    # ─── Meeting Minutes Helpers ─────────────────────────────────────
-
-    def _add_meeting_header(self, doc, minutes: MeetingMinutes):
-        """Tạo bảng header quốc hiệu — tiêu ngữ cho biên bản."""
-        table = doc.add_table(rows=1, cols=2)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-        for row in table.rows:
-            for cell in row.cells:
-                _remove_cell_borders(cell)
-
-        # Left cell
-        left_cell = table.cell(0, 0)
-        left_cell.width = Cm(7)
-
-        if minutes.ten_co_quan_chu_quan:
-            p = left_cell.paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            _add_run(p, minutes.ten_co_quan_chu_quan, size=13)
-
-        ten_dv = minutes.ten_don_vi or "_______________"
-        p = left_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, ten_dv, bold=True, size=13)
-
-        p = left_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p = left_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "Số:         /BB-", size=13)
-
-        # Right cell
-        right_cell = table.cell(0, 1)
-        right_cell.width = Cm(9)
-
-        p = right_cell.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", bold=True, size=13)
-
-        p = right_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "Độc lập - Tự do - Hạnh phúc", bold=True, size=14, underline=True)
-
-        p = right_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        p = right_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "......., ngày       tháng       năm       ",
-                 italic=True, size=14)
-
-    def _add_meeting_signature(self, doc, minutes: MeetingMinutes):
-        """Tạo bảng ký tên THƯ KÝ — CHỦ TRÌ."""
-        table = doc.add_table(rows=2, cols=2)
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-        for row in table.rows:
-            for cell in row.cells:
-                _remove_cell_borders(cell)
-
-        p = table.cell(0, 0).paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "THƯ KÝ", bold=True, size=14)
-
-        p = table.cell(0, 1).paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _add_run(p, "CHỦ TRÌ", bold=True, size=14)
-
-        cell_tk = table.cell(1, 0)
-        for _ in range(4):
-            cell_tk.add_paragraph()
-        p = cell_tk.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        ten_tk = minutes.ten_thu_ky or "_______________"
-        _add_run(p, ten_tk, bold=True, size=14)
-
-        cell_ct = table.cell(1, 1)
-        for _ in range(4):
-            cell_ct.add_paragraph()
-        p = cell_ct.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        ten_ct = minutes.ten_chu_tri or "_______________"
-        _add_run(p, ten_ct, bold=True, size=14)
 
 
 # Singleton instance

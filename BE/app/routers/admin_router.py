@@ -168,8 +168,7 @@ async def delete_dept(dept_id: str, admin: dict = Depends(require_org_admin)):
 @router.post("/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(req: AdminUserCreate, admin: dict = Depends(require_org_admin)):
     """Tạo tài khoản người dùng (admin đơn vị hoặc hệ thống)."""
-    # org_admin can only create users within their org and always uses Server 1.
-    effective_ai_engine = req.ai_engine
+    # org_admin can only create users within their org.
     if admin.get("role") == "org_admin":
         if req.org_id and req.org_id != admin.get("org_id"):
             raise HTTPException(status_code=403, detail="Không có quyền tạo user cho đơn vị khác")
@@ -177,7 +176,6 @@ async def create_user(req: AdminUserCreate, admin: dict = Depends(require_org_ad
             req.org_id = admin.get("org_id")
         if req.role == "system_admin":
             raise HTTPException(status_code=403, detail="Không có quyền tạo admin hệ thống")
-        effective_ai_engine = "notebooklm"
 
     # Check username uniqueness
     existing = await db.get_user_by_username(req.username)
@@ -193,9 +191,8 @@ async def create_user(req: AdminUserCreate, admin: dict = Depends(require_org_ad
         role=req.role,
         org_id=req.org_id,
         dept_id=req.dept_id,
-        ai_engine=effective_ai_engine,
     )
-    logger.info(f"User created by admin: {req.username} (role={req.role}, org={req.org_id}, ai_engine={effective_ai_engine})")
+    logger.info(f"User created by admin: {req.username} (role={req.role}, org={req.org_id})")
     return AdminUserResponse(**user)
 
 
@@ -239,12 +236,6 @@ async def update_user(user_id: str, req: AdminUserUpdate, admin: dict = Depends(
         kwargs["dept_id"] = req.dept_id
     if req.password:
         kwargs["password_hash"] = hash_password(req.password)
-    if req.ai_engine is not None:
-        if admin.get("role") != "system_admin":
-            raise HTTPException(status_code=403, detail="Chỉ admin hệ thống mới được đổi máy chủ xử lý")
-        # Empty string resets to global default (NULL in DB)
-        kwargs["ai_engine"] = req.ai_engine if req.ai_engine else None
-
     user = await db.update_user(user_id, **kwargs)
     return AdminUserResponse(**user)
 
