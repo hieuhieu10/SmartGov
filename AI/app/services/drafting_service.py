@@ -1,9 +1,6 @@
-"""
-STTNB Drafting Service — Soạn văn bản hành chính theo NĐ 30/2020/NĐ-CP.
+"""Drafting service for administrative documents under NĐ 30/2020/NĐ-CP.
 
-Dual-engine support:
-  - NotebookLM: Uses NotebookLM chat API for content generation
-  - Self-hosted: Scans documents via LLM → generates via vLLM agent pipeline
+The service uses the internal document scanner and agent pipeline.
 
 Hỗ trợ 6 loại văn bản:
 1. Công văn (cong_van)
@@ -82,7 +79,7 @@ def _build_prompt(doc_type: DocumentType, input_data: dict,
     Args:
         doc_type: Type of document.
         input_data: User-provided input data.
-        context: Retrieved context from RAG (self-hosted) or empty for NotebookLM.
+        context: Retrieved context from the internal RAG pipeline.
     """
 
     type_name = DOCUMENT_TYPE_INFO[doc_type]["name"]
@@ -222,71 +219,6 @@ QUY TẮC TRÌNH BÀY (RẤT QUAN TRỌNG):
     return base_prompt
 
 
-def _build_notebooklm_prompt(doc_type: DocumentType, input_data: dict, source_filter: str = "") -> str:
-    """Build a concise prompt for Server 1. Long policy prompts can make Server 1 return no final answer."""
-    type_name = DOCUMENT_TYPE_INFO[doc_type]["name"]
-    trich_yeu = input_data.get("trich_yeu", "")
-    noi_dung_chinh = input_data.get("noi_dung_chinh", "")
-    co_quan = input_data.get("co_quan_ban_hanh", "")
-    extra = f"\n{source_filter}" if source_filter else ""
-
-    if doc_type == DocumentType.KE_HOACH:
-        return f"""Bạn là chuyên viên văn phòng cơ quan nhà nước.
-Dựa trên tài liệu trong sổ tay này, hãy lập KẾ HOẠCH bằng tiếng Việt.
-
-Thông tin:
-- Cơ quan ban hành: {co_quan}
-- Trích yếu: {trich_yeu}
-- Yêu cầu nội dung: {noi_dung_chinh}{extra}
-
-Trả lời CHỈ bằng JSON hợp lệ, không markdown, không giải thích, theo cấu trúc:
-{{
-  "phan_mo_dau": "Căn cứ ban hành và câu dẫn vào kế hoạch",
-  "muc_dich_yeu_cau": "1. Mục đích: ...\\n2. Yêu cầu: ...",
-  "noi_dung_thuc_hien": "1. Nhiệm vụ...\\n- Nội dung: ...\\n- Cơ quan chủ trì: ...\\n- Cơ quan phối hợp: ...\\n- Thời gian thực hiện: ...",
-  "kinh_phi": "Nguồn kinh phí, quản lý và thanh quyết toán",
-  "to_chuc_thuc_hien": "Phân công trách nhiệm, chế độ báo cáo, kiểm tra giám sát"
-}}
-
-Bắt buộc:
-- Không để rỗng trường nào.
-- `noi_dung_thuc_hien` phải có ít nhất 3 nhiệm vụ cụ thể từ tài liệu nguồn nếu tài liệu có đủ.
-- Mỗi nhiệm vụ phải rõ nội dung, cơ quan chủ trì/phối hợp và thời gian nếu tài liệu có.
-- Không đưa trích dẫn [1], tên file nguồn hoặc metadata vào JSON.
-"""
-
-    if doc_type == DocumentType.CONG_VAN:
-        schema = '{"noi_dung":"Nội dung công văn theo các mục 1, 2, 3...", "de_nghi":"Phần đề nghị cuối công văn"}'
-    elif doc_type == DocumentType.QUYET_DINH:
-        schema = '{"can_cu":["Căn cứ ...;"], "dieu_khoan":[{"so_dieu":"Điều 1", "noi_dung":"..."}]}'
-    elif doc_type == DocumentType.THONG_BAO:
-        schema = '{"noi_dung":"Nội dung thông báo theo các mục rõ ràng"}'
-    elif doc_type == DocumentType.TO_TRINH:
-        schema = '{"su_can_thiet":"...", "noi_dung_de_xuat":"...", "kien_nghi":"..."}'
-    elif doc_type == DocumentType.BAO_CAO:
-        schema = '{"tinh_hinh_chung":"...", "ket_qua":"...", "han_che":"...", "phuong_huong":"..."}'
-    else:
-        schema = '{"noi_dung":"..."}'
-
-    return f"""Bạn là chuyên viên văn phòng cơ quan nhà nước.
-Dựa trên tài liệu trong sổ tay này, hãy soạn {type_name} bằng tiếng Việt.
-
-Thông tin:
-- Cơ quan ban hành: {co_quan}
-- Trích yếu: {trich_yeu}
-- Yêu cầu nội dung: {noi_dung_chinh}{extra}
-
-Trả lời CHỈ bằng JSON hợp lệ, không markdown, không giải thích, theo cấu trúc:
-{schema}
-
-Bắt buộc:
-- Không để rỗng trường nội dung.
-- Nội dung phải cụ thể theo tài liệu nguồn và yêu cầu người dùng.
-- Không đưa trích dẫn [1], tên file nguồn hoặc metadata vào JSON.
-"""
-
-
-# ─── Drafting Service ─────────────────────────────────────────────────
 
 class DraftingService:
     """Service to draft administrative documents with dual-engine support."""
@@ -339,47 +271,30 @@ class DraftingService:
                 return doc_type
         return DocumentType.CONG_VAN
 
-    async def draft_document(self, notebook_id: str, doc_type: DocumentType | None,
+    async def draft_document(self, _source_id: str, doc_type: DocumentType | None,
                              input_data: dict, repo_id: str = "",
                              current_user: dict = None,
                              selected_document_ids: list[str] | None = None) -> dict:
         """
-        Draft a document using the configured AI engine.
+        Draft a document using the internal AI pipeline.
 
         Args:
-            notebook_id: NotebookLM notebook ID (used in NotebookLM mode).
             doc_type: Type of document to draft.
             input_data: User-provided input data.
             repo_id: Repository ID (used in self-hosted mode for retrieval).
-            current_user: User dict for per-user engine resolution.
+            current_user: Current user context (kept for API compatibility).
 
         Returns:
             Merged dict of AI-generated content + input_data.
         """
-        # Compatibility entrypoint only; the internal HTTP API normally selects
-        # the engine from its request envelope before calling this service.
-        user_engine = (current_user or {}).get("ai_engine")
-        use_self_hosted = (
-            user_engine == "self_hosted"
-            if user_engine
-            else settings.is_self_hosted
-        )
         if doc_type is None:
             raise ValueError("Vui lòng chọn loại văn bản trước khi soạn.")
+        return await self._draft_self_hosted(
+            repo_id, doc_type, input_data,
+            selected_document_ids=selected_document_ids,
+        )
 
-        if use_self_hosted:
-            return await self._draft_self_hosted(
-                repo_id, doc_type, input_data,
-                selected_document_ids=selected_document_ids,
-            )
-        else:
-            return await self._draft_notebooklm(
-                notebook_id, doc_type, input_data,
-                repo_id=repo_id,
-                selected_document_ids=selected_document_ids,
-            )
-
-    async def edit_draft_data(self, notebook_id: str, doc_type: DocumentType,
+    async def edit_draft_data(self, _source_id: str, doc_type: DocumentType,
                               draft_data: dict, input_data: dict,
                               instruction: str, current_user: dict = None) -> tuple[dict, dict]:
         """
@@ -394,34 +309,6 @@ class DraftingService:
         return await self._edit_draft_data_self_hosted(
             doc_type, draft_data, input_data, instruction
         )
-
-    async def _edit_draft_data_notebooklm(self, notebook_id: str, doc_type: DocumentType,
-                                          draft_data: dict, input_data: dict,
-                                          instruction: str) -> tuple[dict, dict]:
-        """Edit a complete structured draft using the repository's NotebookLM notebook."""
-        from app.services.notebooklm_service import notebooklm_service
-
-        if not notebook_id:
-            raise ValueError("Kho dữ liệu chưa liên kết Server 1 nên không thể chỉnh sửa bằng Server 1.")
-
-        prompt = self._build_notebooklm_edit_prompt(doc_type, draft_data, input_data, instruction)
-        raw_response = await notebooklm_service.chat_ask(notebook_id, prompt)
-        logger.info("[NotebookLM] Draft edit response: %s chars", len(raw_response))
-        try:
-            return self._parse_edit_response(raw_response, draft_data, input_data)
-        except ValueError as first_error:
-            logger.warning("[NotebookLM] Draft edit response invalid; retrying with stricter concise prompt: %s", first_error)
-
-        retry_prompt = self._build_notebooklm_edit_retry_prompt(
-            doc_type, draft_data, input_data, instruction, raw_response
-        )
-        retry_response = await notebooklm_service.chat_ask(notebook_id, retry_prompt)
-        logger.info("[NotebookLM] Draft edit retry response: %s chars", len(retry_response))
-        try:
-            return self._parse_edit_response(retry_response, draft_data, input_data)
-        except ValueError as retry_error:
-            logger.warning("[NotebookLM] Draft edit retry failed; falling back to Server 2: %s", retry_error)
-            return await self._edit_draft_data_self_hosted(doc_type, draft_data, input_data, instruction)
 
     async def _edit_draft_data_self_hosted(self, doc_type: DocumentType,
                                            draft_data: dict, input_data: dict,
@@ -476,54 +363,6 @@ QUY TẮC BẮT BUỘC:
 3. draft_data phải là TOÀN BỘ nội dung sau chỉnh sửa, không phải patch/diff.
 4. Nếu người dùng yêu cầu đổi trích yếu, cơ quan, người ký, nơi nhận hoặc metadata khác thì đưa trường đó vào input_data_updates.
 5. Không thêm markdown, không giải thích, không đưa trích dẫn hoặc metadata nguồn vào nội dung xuất Word.
-"""
-
-    def _build_notebooklm_edit_prompt(self, doc_type: DocumentType, draft_data: dict,
-                                      input_data: dict, instruction: str) -> str:
-        """Build a concise edit prompt for Server 1."""
-        type_name = DOCUMENT_TYPE_INFO.get(doc_type, {}).get("name", doc_type.value)
-        compact_input = json.dumps(input_data or {}, ensure_ascii=False, separators=(",", ":"))
-        compact_draft = json.dumps(draft_data or {}, ensure_ascii=False, separators=(",", ":"))
-        return f"""Bạn là chuyên viên văn phòng cơ quan nhà nước.
-Chỉnh sửa {type_name} theo yêu cầu, dựa trên toàn bộ JSON hiện tại dưới đây.
-
-YÊU CẦU CHỈNH SỬA:
-{instruction}
-
-INPUT/METADATA HIỆN TẠI:
-{compact_input}
-
-TOÀN BỘ JSON NỘI DUNG VĂN BẢN HIỆN TẠI:
-{compact_draft}
-
-Trả lời CHỈ bằng JSON hợp lệ, không markdown, không giải thích:
-{{"draft_data":{{...toàn bộ JSON nội dung văn bản sau chỉnh sửa...}},"input_data_updates":{{}}}}
-
-Bắt buộc:
-- Chỉ chỉnh theo yêu cầu người dùng; giữ nguyên các phần không liên quan.
-- `draft_data` phải là TOÀN BỘ nội dung sau chỉnh sửa, không phải patch/diff.
-- Giữ nguyên cấu trúc JSON hiện tại; không tự đổi tên trường nếu không cần thiết.
-- Nếu đổi trích yếu, cơ quan ban hành, người ký, chức vụ, nơi nhận hoặc metadata khác thì đưa vào `input_data_updates`.
-- Không đưa trích dẫn [1], tên file nguồn hoặc metadata nguồn vào JSON.
-"""
-
-    def _build_notebooklm_edit_retry_prompt(self, doc_type: DocumentType, draft_data: dict,
-                                            input_data: dict, instruction: str,
-                                            previous_response: str) -> str:
-        """Build a minimal retry prompt for Server 1 when it returns empty/invalid output."""
-        type_name = DOCUMENT_TYPE_INFO.get(doc_type, {}).get("name", doc_type.value)
-        compact_input = json.dumps(input_data or {}, ensure_ascii=False, separators=(",", ":"))
-        compact_draft = json.dumps(draft_data or {}, ensure_ascii=False, separators=(",", ":"))
-        previous_note = previous_response[:1000] if previous_response else "Server 1 chưa trả nội dung."
-        return f"""Lần trả lời trước không hợp lệ: {previous_note}
-
-Hãy chỉnh sửa {type_name}.
-Yêu cầu: {instruction}
-Metadata: {compact_input}
-Toàn bộ JSON hiện tại: {compact_draft}
-
-Chỉ trả về JSON thuần đúng mẫu sau, không thêm chữ nào khác:
-{{"draft_data":{{...TOÀN BỘ nội dung sau chỉnh sửa...}},"input_data_updates":{{}}}}
 """
 
     def _build_edit_user_prompt(self, doc_type: DocumentType, draft_data: dict,
@@ -588,61 +427,6 @@ YÊU CẦU RÀ SOÁT SAU CHỈNH SỬA:
         if not edited_draft:
             raise ValueError("AI không trả về nội dung văn bản sau chỉnh sửa.")
         return edited_draft, edited_input
-
-    async def _draft_notebooklm(self, notebook_id: str, doc_type: DocumentType,
-                                input_data: dict, repo_id: str = "",
-                                selected_document_ids: list[str] | None = None) -> dict:
-        """Draft using Server 1, with retry and Server 2 fallback for empty drafts."""
-        from app.services.notebooklm_service import notebooklm_service
-
-        source_filter = await self._build_source_filter(selected_document_ids or [])
-        prompt = _build_notebooklm_prompt(doc_type, input_data, source_filter=source_filter)
-        raw_response = await notebooklm_service.chat_ask(notebook_id, prompt)
-        logger.info(f"[NotebookLM] Draft response: {len(raw_response)} chars")
-
-        draft_data = self._parse_draft_response(raw_response)
-        if self._is_insufficient_draft(doc_type, draft_data, input_data):
-            logger.warning("[NotebookLM] Draft content is insufficient; retrying with stricter prompt")
-            retry_prompt = self._build_notebooklm_retry_prompt(doc_type, input_data, raw_response, source_filter)
-            retry_response = await notebooklm_service.chat_ask(notebook_id, retry_prompt)
-            logger.info(f"[NotebookLM] Draft retry response: {len(retry_response)} chars")
-            retry_data = self._parse_draft_response(retry_response)
-            if not self._is_insufficient_draft(doc_type, retry_data, input_data):
-                draft_data = retry_data
-                raw_response = retry_response
-            elif repo_id:
-                logger.warning("[NotebookLM] Retry still insufficient; falling back to Server 2 drafting for repo %s", repo_id)
-                fallback = await self._draft_self_hosted(
-                    repo_id, doc_type, input_data,
-                    selected_document_ids=selected_document_ids,
-                )
-                fallback["_server1_fallback_reason"] = "Server 1 trả về nội dung rỗng/không đủ để xuất văn bản"
-                return fallback
-            else:
-                raise ValueError("Server 1 không trả về đủ nội dung để soạn văn bản. Vui lòng kiểm tra tài liệu nguồn hoặc thử lại.")
-
-        result = {**draft_data, **input_data}
-        result["_raw_response"] = raw_response
-        result["document_type"] = doc_type.value
-        return result
-
-    def _build_notebooklm_retry_prompt(self, doc_type: DocumentType, input_data: dict,
-                                       previous_response: str, source_filter: str = "") -> str:
-        type_name = DOCUMENT_TYPE_INFO.get(doc_type, {}).get("name", doc_type.value)
-        prompt = _build_notebooklm_prompt(doc_type, input_data, source_filter=source_filter)
-        return f"""{prompt}
-
-LẦN TRẢ LỜI TRƯỚC KHÔNG ĐẠT YÊU CẦU vì nội dung chính rỗng hoặc quá sơ sài:
-{previous_response[:2000]}
-
-Hãy trả lại JSON đầy đủ cho {type_name}.
-BẮT BUỘC:
-- Không để rỗng các trường nội dung.
-- Với Kế hoạch, trường `noi_dung_thuc_hien` phải có nhiều nhiệm vụ cụ thể từ tài liệu nguồn.
-- Mỗi nhiệm vụ phải có nội dung, cơ quan chủ trì/phối hợp, thời hạn nếu tài liệu có.
-- Nếu thiếu thông tin trong nguồn, vẫn phải soạn dựa trên yêu cầu người dùng và thông tin có trong kho, không trả JSON rỗng.
-- CHỈ JSON thuần, không giải thích.
-"""
 
     def _text_size(self, value) -> int:
         if isinstance(value, str):
