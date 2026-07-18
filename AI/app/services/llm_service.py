@@ -138,6 +138,11 @@ class LLMService:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            # Tắt chế độ suy luận của model reasoning (Qwen3...) qua tham số
+            # chuẩn của vLLM, thay vì dựa vào chuỗi "/no_think" rải rác trong
+            # từng prompt. Nếu không tắt, model có thể dùng hết max_tokens cho
+            # phần <think> và trả về content rỗng dù finish_reason=length.
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
         content = response.choices[0].message.content or ""
         finish_reason = response.choices[0].finish_reason or "unknown"
