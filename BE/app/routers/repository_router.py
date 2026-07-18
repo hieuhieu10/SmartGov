@@ -30,7 +30,6 @@ def _build_response(repo: dict, doc_count: int, is_shared: bool = False) -> Repo
         id=repo["id"],
         name=repo["name"],
         description=repo["description"],
-        notebook_id=repo.get("notebook_id"),
         category_id=repo.get("category_id"),
         category_name=repo.get("category_name"),
         document_count=doc_count,

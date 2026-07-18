@@ -3,8 +3,6 @@
 import shutil
 
 from app import database as db
-from app.auth import is_user_self_hosted
-from app.config import settings
 from app.models import DocumentType
 from app.services.ai_client import ai_client
 
@@ -47,26 +45,21 @@ class DraftingService:
 
     async def draft_document(
         self,
-        notebook_id: str,
         doc_type: DocumentType,
         input_data: dict,
         repo_id: str = "",
         current_user: dict = None,
         selected_document_ids: list[str] | None = None,
     ) -> dict:
-        engine = "self_hosted" if (
-            is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
-        ) else "self_hosted"
         selected = selected_document_ids or []
         data = await ai_client.request(
             "/internal/draft/generate",
             repo_id=repo_id,
             user_id=(current_user or {}).get("id", ""),
-            engine=engine,
+            engine="self_hosted",
             input_data={
                 "document_type": doc_type.value,
                 "draft_input": input_data,
-                "notebook_id": notebook_id,
                 "selected_document_ids": selected,
                 "documents": await ai_client.documents(repo_id, selected or None),
             },
@@ -75,22 +68,17 @@ class DraftingService:
 
     async def edit_draft_data(
         self,
-        notebook_id: str,
         doc_type: DocumentType,
         draft_data: dict,
         input_data: dict,
         instruction: str,
         current_user: dict = None,
     ) -> tuple[dict, dict]:
-        engine = "self_hosted" if (
-            is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
-        ) else "self_hosted"
         data = await ai_client.request(
             "/internal/draft/edit",
             user_id=(current_user or {}).get("id", ""),
-            engine=engine,
+            engine="self_hosted",
             input_data={
-                "notebook_id": notebook_id,
                 "document_type": doc_type.value,
                 "draft_data": draft_data,
                 "draft_input": input_data,

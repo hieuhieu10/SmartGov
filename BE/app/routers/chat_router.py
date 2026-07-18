@@ -30,6 +30,7 @@ async def chat(
     ```
     data: {"type": "chunk", "content": "Theo tài liệu "}
     data: {"type": "chunk", "content": "trong kho, "}
+    data: {"type": "chart", "charts": [...]}  # optional
     data: {"type": "done", "content": ""}
     ```
     """
@@ -38,7 +39,7 @@ async def chat(
 
     # Get full answer from AI engine
     try:
-        full_answer = await chat_service.ask_question(
+        full_answer, charts = await chat_service.ask_question(
             repo_id=repo_id,
             user_id=current_user["id"],
             question=req.message,
@@ -51,7 +52,7 @@ async def chat(
 
     # Return SSE stream
     return EventSourceResponse(
-        chat_service.stream_response(full_answer),
+        chat_service.stream_response(full_answer, charts),
         media_type="text/event-stream",
     )
 

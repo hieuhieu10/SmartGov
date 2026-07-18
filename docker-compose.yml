@@ -21,15 +21,20 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # LƯU Ý: KHÔNG khai báo VLLM_*/EMBEDDING_* ở đây — `environment:` sẽ đè lên
-    # `env_file:` (AI/.env) và biến ${...} đọc từ .env gốc repo, làm cấu hình
-    # trong AI/.env bị thay bằng default. Cấu hình model đặt trong AI/.env.
+    # Dùng cấu hình LLM từ .env gốc của dự án trong môi trường Docker.
     environment:
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?AI_INTERNAL_TOKEN is required}
-      AI_ENGINE: ${AI_ENGINE:-self_hosted}
+      AI_ENGINE: self_hosted
       # Agent Researcher gọi ngược về BE để dùng chung hybrid search (pgvector
       # + FTS) với Chat RAG, xác thực bằng chính AI_INTERNAL_TOKEN ở trên.
       BE_SERVICE_URL: http://be:6868
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      VLLM_MODEL_NAME: ${VLLM_MODEL_NAME:-your-model}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      VLLM_USER_AGENT: ${VLLM_USER_AGENT:-OfficeAI/1.0}
+      VLLM_FALLBACK_BASE_URL: ${VLLM_FALLBACK_BASE_URL:-}
+      VLLM_FALLBACK_MODEL_NAME: ${VLLM_FALLBACK_MODEL_NAME:-}
+      VLLM_FALLBACK_API_KEY: ${VLLM_FALLBACK_API_KEY:-}
     env_file:
       - path: ./AI/.env
         required: false

@@ -252,8 +252,15 @@ def _build_markdown(summary: dict) -> str:
 
 
 class FeedbackSummaryService:
-    async def create_summary(self, repo_id: str, user_id: str) -> dict:
-        """Tạo bản tổng hợp từ dự thảo + các văn bản góp ý của kho.
+    async def create_summary(
+        self,
+        repo_id: str,
+        user_id: str,
+        feedback_document_id: str | None = None,
+        draft_document_id: str | None = None,
+        feedback_repository_id: str | None = None,
+    ) -> dict:
+        """Tạo bản tổng hợp từ một dự thảo và các góp ý của kho được chọn.
 
         Trả về document mới (folder summary). Raise ValueError nếu không có
         văn bản góp ý đã xử lý.
@@ -265,14 +272,30 @@ class FeedbackSummaryService:
             doc["id"] for doc in all_docs
             if (doc.get("folder_key") or "draft") == FEEDBACK_FOLDER
         ]
+        feedback_repo_id = feedback_repository_id or repo_id
+        if feedback_repository_id:
+            feedback_source_docs = await db.get_documents_by_repository(feedback_repo_id)
+            feedback_ids = [
+                doc["id"]
+                for doc in feedback_source_docs
+                if (doc.get("folder_key") or "draft") not in {SUMMARY_FOLDER, "final"}
+            ]
+        if feedback_document_id:
+            if feedback_document_id not in feedback_ids:
+                raise ValueError("Văn bản góp ý đã chọn không thuộc kho nguồn")
+            feedback_ids = [feedback_document_id]
         draft_ids = [
             doc["id"] for doc in all_docs
             if (doc.get("folder_key") or "draft") == DRAFT_FOLDER
         ]
+        if draft_document_id:
+            if draft_document_id not in {doc["id"] for doc in all_docs}:
+                raise ValueError("Tài liệu dự thảo đã chọn không thuộc kho nguồn")
+            draft_ids = [draft_document_id]
         if not feedback_ids:
             raise ValueError("Chưa có văn bản góp ý nào trong kho")
 
-        feedback_rows = await db.get_documents_markdown_by_repository(repo_id, feedback_ids)
+        feedback_rows = await db.get_documents_markdown_by_repository(feedback_repo_id, feedback_ids)
         feedback_documents = [
             {"filename": row["filename"], "markdown_content": row.get("markdown_content", "")}
             for row in feedback_rows

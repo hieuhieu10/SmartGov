@@ -11,6 +11,8 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Database,
+  FilePenLine,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -60,6 +62,8 @@ export function Sidebar({ onLogout }: SidebarProps) {
 
   const navItems = [
     { name: 'Trang chủ', path: '/', icon: Files },
+    { name: 'Kho dữ liệu', path: '/data', icon: Database },
+    { name: 'Xây dựng dự thảo', path: '/drafting', icon: FilePenLine },
     { name: 'Trợ lý Chat', path: '/chat', icon: MessageSquare },
   ];
 
@@ -84,12 +88,12 @@ export function Sidebar({ onLogout }: SidebarProps) {
           isCollapsed ? "justify-center px-0" : "px-2"
         )}
       >
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold text-xl">
-          AI
+        <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center shadow-lg shadow-slate-950/20">
+          <img src="/icon.png" alt="TKO" className="w-full h-full object-contain" />
         </div>
         {!isCollapsed && (
           <div>
-            <h1 className="text-lg font-bold text-white tracking-tight">Office AI</h1>
+            <h1 className="text-lg font-bold text-white tracking-tight">Trợ lý Ơi</h1>
             <p className="text-xs text-slate-400 font-medium tracking-wide">HỖ TRỢ SOẠN THẢO VB</p>
           </div>
         )}

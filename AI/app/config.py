@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     vllm_fallback_base_url: str = ""
     vllm_fallback_model_name: str = ""
     vllm_fallback_api_key: str = ""
+    # Tạo biểu đồ từ câu trả lời/chat có số liệu. Để trống thì tính năng này
+    # tự bỏ qua, không ảnh hưởng luồng chat chính.
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.1-flash-lite"
+    google_gemini_base_url: str = ""
     # Model chính fail-fast: chờ tối đa ngần này (giây) rồi chuyển fallback ngay,
     # không retry, để giảm thời gian chờ khi model chính timeout/quá tải.
     vllm_primary_timeout: float = 240.0
@@ -52,11 +57,10 @@ class Settings(BaseSettings):
     embedding_max_chars: int = 800
     doc_chunk_size: int = 80000
     scanner_max_tokens: int = 8192
+    # Chat must remain responsive when the self-hosted LLM is offline. After
+    # this many seconds, use the authorized-document Gemini fallback instead.
+    chat_scanner_timeout: float = 20.0
     context_max_chars: int = 400000
-
-    @property
-    def is_self_hosted(self) -> bool:
-        return self.ai_engine == "self_hosted"
 
     class Config:
         env_file = ".env"

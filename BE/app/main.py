@@ -64,7 +64,7 @@ app.include_router(internal_retrieval_router.router)
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint — skips NotebookLM auth check to avoid interrupting long-running prompts."""
+    """Public liveness endpoint."""
     return HealthResponse(
         status="ok",
         service="STTNB - Speech To Text NoteBook",

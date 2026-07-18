@@ -218,9 +218,7 @@ class TemplateService:
 
     def _parse_heading_result(self, raw: str) -> dict:
         """Parse heading extraction result from AI response."""
-        from app.services.notebooklm_service import notebooklm_service
-
-        json_str = notebooklm_service._extract_json(raw)
+        json_str = self._extract_json(raw)
         if json_str:
             result = json.loads(json_str)
         else:
@@ -253,6 +251,19 @@ class TemplateService:
             f"doc_type={doc_type}, trich_yeu={result.get('trich_yeu', '')[:50]}"
         )
         return result
+
+    @staticmethod
+    def _extract_json(text: str) -> str | None:
+        """Extract a JSON object from an LLM response without provider dependencies."""
+        text = text.strip()
+        if text.startswith("{"):
+            return text
+        import re
+        match = re.search(r"```(?:json)?\\s*(\\{[\\s\\S]*?\\})\\s*```", text)
+        if match:
+            return match.group(1)
+        match = re.search(r"\\{[\\s\\S]*\\}", text)
+        return match.group(0) if match else ""
 
     # ═══════════════════════════════════════════════════════════════════
     # Step 2: Generate content for each heading

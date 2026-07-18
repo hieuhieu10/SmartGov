@@ -1,4 +1,4 @@
-"""Internal FastAPI service for NotebookLM and self-hosted AI workloads."""
+"""Internal FastAPI service for self-hosted AI workloads."""
 
 from __future__ import annotations
 
@@ -23,10 +23,11 @@ from app.services.document_scanner import (
 from app.services.dataset_service import dataset_service
 from app.services.drafting_service import drafting_service
 from app.services.llm_service import llm_service
-from app.services.notebooklm_service import notebooklm_service
 from app.services.rag_service import rag_service
 from app.services.summary_service import summary_service
 from app.services.template_service import template_service
+from app.services.chart_service import chart_service
+from app.services.gemini_service import gemini_service
 
 logger = logging.getLogger("officeai.ai")
 logging.basicConfig(level=logging.INFO)
@@ -143,18 +144,50 @@ async def chat_self_hosted(payload: Envelope) -> dict:
     question = str(payload.input_data["question"])
     token = set_request_documents(_documents(payload))
     try:
-        results = await document_scanner.scan_for_chat(payload.repo_id, question)
+        try:
+            results = await asyncio.wait_for(
+                document_scanner.scan_for_chat(payload.repo_id, question),
+                timeout=settings.chat_scanner_timeout,
+            )
+        except TimeoutError:
+            logger.warning("Self-hosted chat scanner timed out; using Gemini fallback")
+            results = []
         if not results:
+            # The scanner depends on the self-hosted LLM. If it is temporarily
+            # unavailable, still answer from the same BE-authorized documents
+            # through the configured Gemini fallback rather than claiming the
+            # repository has no evidence.
+            fallback_answer = await asyncio.to_thread(
+                gemini_service.answer_from_documents, question, _documents(payload)
+            )
+            if fallback_answer:
+                return ok({"answer": fallback_answer})
             return ok({"answer": "Không tìm thấy thông tin đủ căn cứ trong các tài liệu đã chọn."})
         context = document_scanner.format_scanner_results(results)
-        answer = await llm_service.chat(
-            "Bạn là trợ lý hành chính. Chỉ trả lời từ ngữ cảnh tài liệu, không bịa thông tin.",
-            f"CÂU HỎI:\n{question}\n\nNGỮ CẢNH:\n{context}",
-            max_tokens=4096,
-        )
+        try:
+            answer = await llm_service.chat(
+                "Bạn là trợ lý hành chính. Chỉ trả lời từ ngữ cảnh tài liệu, không bịa thông tin.",
+                f"CÂU HỎI:\n{question}\n\nNGỮ CẢNH:\n{context}",
+                max_tokens=4096,
+            )
+        except Exception:
+            answer = await asyncio.to_thread(
+                gemini_service.answer_from_documents, question, _documents(payload)
+            )
+            if not answer:
+                raise
         return ok({"answer": answer})
     finally:
         reset_request_documents(token)
+
+
+@app.post("/internal/charts/analyze", dependencies=[Depends(require_internal_token)])
+async def analyze_charts(payload: Envelope) -> dict:
+    data = payload.input_data
+    result = await asyncio.to_thread(
+        chart_service.analyze, str(data.get("text") or ""), str(data.get("request") or "")
+    )
+    return ok(result)
 
 
 @app.post("/internal/dataset/extract", dependencies=[Depends(require_internal_token)])
@@ -180,21 +213,10 @@ async def generate_draft(payload: Envelope) -> dict:
     doc_type = DocumentType(data["document_type"])
     token = set_request_documents(_documents(payload))
     try:
-        if payload.engine == "self_hosted":
-            result = await drafting_service._draft_self_hosted(
-                payload.repo_id,
-                doc_type,
-                data.get("draft_input") or {},
-                selected_document_ids=data.get("selected_document_ids") or [],
-            )
-        else:
-            result = await drafting_service._draft_notebooklm(
-                data.get("notebook_id", ""),
-                doc_type,
-                data.get("draft_input") or {},
-                repo_id=payload.repo_id,
-                selected_document_ids=data.get("selected_document_ids") or [],
-            )
+        result = await drafting_service._draft_self_hosted(
+            payload.repo_id, doc_type, data.get("draft_input") or {},
+            selected_document_ids=data.get("selected_document_ids") or [],
+        )
         return ok({"draft_data": result})
     finally:
         reset_request_documents(token)
@@ -204,28 +226,16 @@ async def generate_draft(payload: Envelope) -> dict:
 async def edit_draft(payload: Envelope) -> dict:
     data = payload.input_data
     doc_type = DocumentType(data["document_type"])
-    if payload.engine == "self_hosted":
-        draft, inputs = await drafting_service._edit_draft_data_self_hosted(
-            doc_type, data.get("draft_data") or {}, data.get("draft_input") or {}, data["instruction"]
-        )
-    else:
-        draft, inputs = await drafting_service._edit_draft_data_notebooklm(
-            data.get("notebook_id", ""),
-            doc_type,
-            data.get("draft_data") or {},
-            data.get("draft_input") or {},
-            data["instruction"],
-        )
+    draft, inputs = await drafting_service._edit_draft_data_self_hosted(
+        doc_type, data.get("draft_data") or {}, data.get("draft_input") or {}, data["instruction"]
+    )
     return ok({"draft_data": draft, "input_data": inputs})
 
 
 @app.post("/internal/template/extract", dependencies=[Depends(require_internal_token)])
 async def extract_template(payload: Envelope) -> dict:
     path = payload.input_data["stored_path"]
-    if payload.engine == "self_hosted":
-        result = await template_service._extract_headings_self_hosted(path)
-    else:
-        result = await template_service._extract_headings_notebooklm(path)
+    result = await template_service._extract_headings_self_hosted(path)
     return ok(result)
 
 
@@ -234,67 +244,11 @@ async def generate_template(payload: Envelope) -> dict:
     data = payload.input_data
     token = set_request_documents(_documents(payload))
     try:
-        if payload.engine == "self_hosted":
-            result = await template_service._generate_self_hosted(
-                data.get("headings") or [],
-                data.get("doc_type_label", ""),
-                data.get("trich_yeu", ""),
-                data.get("user_input") or {},
-                payload.repo_id,
-                selected_document_ids=data.get("selected_document_ids") or [],
-            )
-        else:
-            source_filter = await template_service._build_source_filter(
-                data.get("selected_document_ids") or []
-            )
-            result = await template_service._generate_notebooklm(
-                data.get("headings") or [],
-                data.get("notebook_id", ""),
-                data.get("doc_type_label", ""),
-                data.get("trich_yeu", ""),
-                data.get("user_input") or {},
-                source_filter=source_filter,
-            )
+        result = await template_service._generate_self_hosted(
+            data.get("headings") or [], data.get("doc_type_label", ""),
+            data.get("trich_yeu", ""), data.get("user_input") or {}, payload.repo_id,
+            selected_document_ids=data.get("selected_document_ids") or [],
+        )
         return ok({"content": result})
     finally:
         reset_request_documents(token)
-
-
-@app.post("/internal/notebook/create", dependencies=[Depends(require_internal_token)])
-async def create_notebook(payload: Envelope) -> dict:
-    notebook_id = await notebooklm_service.create_notebook(payload.input_data["name"])
-    return ok(
-        {
-            "notebook_id": notebook_id,
-            "session_fingerprint": notebooklm_service.get_session_fingerprint(),
-        }
-    )
-
-
-@app.post("/internal/notebook/session", dependencies=[Depends(require_internal_token)])
-async def notebook_session(_: Envelope) -> dict:
-    return ok({"session_fingerprint": notebooklm_service.get_session_fingerprint()})
-
-
-@app.post("/internal/notebook/delete", dependencies=[Depends(require_internal_token)])
-async def delete_notebook(payload: Envelope) -> dict:
-    await notebooklm_service.delete_notebook(payload.input_data["notebook_id"])
-    return ok()
-
-
-@app.post("/internal/notebook/source/upload", dependencies=[Depends(require_internal_token)])
-async def upload_source(payload: Envelope) -> dict:
-    source_id = await notebooklm_service.upload_source(
-        payload.input_data["notebook_id"], payload.input_data["stored_path"]
-    )
-    return ok({"source_id": source_id})
-
-
-@app.post("/internal/notebook/source/delete", dependencies=[Depends(require_internal_token)])
-async def delete_source(payload: Envelope) -> dict:
-    await notebooklm_service.delete_source(
-        payload.input_data["notebook_id"], payload.input_data["source_id"]
-    )
-    return ok()
-
-

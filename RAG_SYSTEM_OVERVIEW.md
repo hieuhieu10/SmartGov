@@ -1,6 +1,6 @@
-# RAG system
+# SmartGov RAG System Overview
 
-Tài liệu này mô tả RAG hiện tại trong hệ thống Thư ký Ơi: model, dữ liệu, luồng xử lý, PostgreSQL/pgvector và các tech stack chính. File này không chứa API key hoặc secret.
+Tài liệu này mô tả RAG hiện tại trong repo SmartGov: đang dùng model gì, dữ liệu được lưu ở đâu, luồng xử lý như thế nào, và các tech stack chính. File này không chứa API key hoặc secret.
 
 ## 1. Kiến trúc tổng quát
 

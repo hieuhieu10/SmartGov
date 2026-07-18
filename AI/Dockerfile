@@ -16,7 +16,7 @@ COPY requirements.txt .
 # tải phần thiếu, không tải lại toàn bộ.
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt \
-    && pip install "notebooklm-py[browser]" "markitdown[all]"
+    && pip install "markitdown[all]"
 
 # ── Stage 2: runtime — slim + venv đã cài ───────────────────────────────────
 FROM python:3.12-slim

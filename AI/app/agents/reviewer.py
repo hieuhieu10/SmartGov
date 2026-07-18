@@ -18,7 +18,7 @@ from app.agents.citation_checker import citation_checker
 
 logger = logging.getLogger(__name__)
 
-REVIEWER_SYSTEM_PROMPT = """Bạn là chuyên viên kiểm duyệt văn bản hành chính Việt Nam bậc cao, làm việc theo tiêu chuẩn của NotebookLM: "Mọi khẳng định đều phải có bằng chứng".
+REVIEWER_SYSTEM_PROMPT = """Bạn là chuyên viên kiểm duyệt văn bản hành chính Việt Nam bậc cao, làm việc theo nguyên tắc: "Mọi khẳng định đều phải có bằng chứng".
 
 NHIỆM VỤ: Đánh giá bản thảo văn bản dựa trên sự thật (grounding), đúng thẩm quyền hành chính và văn phong hành chính nhà nước Việt Nam.
 

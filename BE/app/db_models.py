@@ -60,7 +60,6 @@ class User(Base):
     dept_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), index=True
     )
-    ai_engine: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -84,8 +83,6 @@ class Repository(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    notebook_id: Mapped[str | None] = mapped_column(String(255))
-    notebooklm_session_fingerprint: Mapped[str | None] = mapped_column(String(128))
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("repository_categories.id", ondelete="SET NULL"), index=True
     )
@@ -104,7 +101,6 @@ class Document(Base):
     folder_key: Mapped[str] = mapped_column(String(80), default="draft", nullable=False, index=True)
     file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     file_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
-    notebooklm_source_id: Mapped[str | None] = mapped_column(String(255))
     markdown_content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     processing_status: Mapped[str] = mapped_column(String(50), default="queued", nullable=False, index=True)
     progress_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
@@ -112,25 +108,6 @@ class Document(Base):
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
-
-
-class DocumentVersion(Base):
-    __tablename__ = "document_versions"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    filename: Mapped[str] = mapped_column(String(500), nullable=False)
-    stored_path: Mapped[str] = mapped_column(String(1000), nullable=False)
-    file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
-    file_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
-    changed_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
-    )
-    changed_by_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
-    change_type: Mapped[str] = mapped_column(String(50), default="edited", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
 
 class DocumentChunk(Base):
@@ -168,4 +145,3 @@ class ChatMessage(Base):
 Index("ix_chat_repo_user_created", ChatMessage.repository_id, ChatMessage.user_id, ChatMessage.created_at)
 Index("ix_document_chunks_doc_index", DocumentChunk.document_id, DocumentChunk.chunk_index, unique=True)
 Index("ix_documents_repo_uploaded", Document.repository_id, Document.uploaded_at)
-Index("ix_document_versions_doc_number", DocumentVersion.document_id, DocumentVersion.version_number, unique=True)
