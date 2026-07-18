@@ -71,10 +71,11 @@ class LLMService:
         Send a chat completion request and return the assistant's response.
 
         Thử model chính trước; nếu lỗi và có cấu hình model dự phòng, tự
-        động thử lại bằng model dự phòng.
+        động thử lại bằng model dự phòng. Nếu phản hồi bị cắt vì hết token
+        (finish_reason=length), tự nối tiếp (xem ``_chat_with_continuation``).
         """
         try:
-            return await self._chat_once(
+            return await self._chat_with_continuation(
                 self._get_client(), settings.vllm_model_name,
                 system_prompt, user_prompt, temperature, max_tokens,
             )
@@ -84,29 +85,64 @@ class LLMService:
                 logger.error(f"LLM request failed (no fallback configured): {e}")
                 raise
             logger.warning(f"LLM primary request failed, retrying with fallback: {e}")
-            return await self._chat_once(
+            return await self._chat_with_continuation(
                 fallback_client, settings.vllm_fallback_model_name,
                 system_prompt, user_prompt, temperature, max_tokens,
             )
 
+    async def _chat_with_continuation(
+        self, client: AsyncOpenAI, model: str, system_prompt: str,
+        user_prompt: str, temperature: float, max_tokens: int,
+    ) -> str:
+        """(B) Gọi model; nếu bị cắt vì hết token thì tự yêu cầu viết tiếp và nối
+        lại, tối đa ``llm_max_continuations`` lần, để sinh được tài liệu dài."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        content, finish = await self._chat_once(client, model, messages, temperature, max_tokens)
+        full = content
+
+        max_cont = settings.llm_max_continuations if settings.llm_auto_continue else 0
+        attempts = 0
+        while finish == "length" and attempts < max_cont:
+            attempts += 1
+            logger.info(f"LLM bị cắt vì hết token, nối tiếp lần {attempts}/{max_cont} (model={model})")
+            cont_messages = messages + [
+                {"role": "assistant", "content": full},
+                {"role": "user", "content": (
+                    "Phần trả lời trên bị cắt vì hết độ dài. Hãy VIẾT TIẾP NGAY tại chỗ "
+                    "bị cắt, nối liền mạch, TUYỆT ĐỐI không lặp lại nội dung đã viết, "
+                    "không mở đầu lại, không thêm lời dẫn."
+                )},
+            ]
+            part, finish = await self._chat_once(
+                client, model, cont_messages, temperature, max_tokens
+            )
+            if not part.strip():
+                break
+            full += part
+
+        if finish == "length":
+            logger.warning(
+                f"LLM vẫn bị cắt sau {attempts} lần nối tiếp (model={model}, "
+                f"max_tokens={max_tokens})"
+            )
+        return full
+
     @staticmethod
-    async def _chat_once(client: AsyncOpenAI, model: str, system_prompt: str,
-                         user_prompt: str, temperature: float, max_tokens: int) -> str:
+    async def _chat_once(client: AsyncOpenAI, model: str, messages: list[dict],
+                         temperature: float, max_tokens: int) -> tuple[str, str]:
         response = await client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )
         content = response.choices[0].message.content or ""
         finish_reason = response.choices[0].finish_reason or "unknown"
         logger.info(f"LLM response ({model}): {len(content)} chars (finish_reason={finish_reason})")
-        if finish_reason == "length":
-            logger.warning(f"LLM response TRUNCATED (max_tokens={max_tokens})")
-        return content
+        return content, finish_reason
 
     async def chat_json(self, system_prompt: str, user_prompt: str,
                         temperature: float = 0.1, max_tokens: int = 4096) -> dict:

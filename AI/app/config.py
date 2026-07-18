@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # không retry, để giảm thời gian chờ khi model chính timeout/quá tải.
     vllm_primary_timeout: float = 240.0
     vllm_fallback_timeout: float = 600.0
+    # (B) Tự nối tiếp khi model bị cắt vì hết token (finish_reason=length).
+    llm_auto_continue: bool = True
+    llm_max_continuations: int = 3
+    # (D) Map-reduce cho tổng hợp góp ý: kích thước mỗi batch văn bản góp ý.
+    summary_batch_max_docs: int = 8
+    summary_batch_max_chars: int = 60000
     ocr_vllm_base_url: str = "http://host.docker.internal:8686/v1"
     ocr_vllm_model_name: str = "your-vision-model"
     ocr_vllm_api_key: str = ""
