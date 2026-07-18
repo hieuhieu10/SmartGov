@@ -6,8 +6,8 @@ from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 
-revision = "20260717_0002"
-down_revision = "20260717_0001"
+revision = "20260717_0003"
+down_revision = "20260717_0002"
 branch_labels = None
 depends_on = None
 

@@ -403,6 +403,33 @@ async def update_document_source_id(doc_id: str, source_id: str) -> None:
     await _update(Document, doc_id, {"notebooklm_source_id": source_id})
 
 
+async def update_document_file(
+    doc_id: str,
+    filename: str,
+    stored_path: str,
+    file_size: int,
+    file_type: str = "",
+) -> Optional[dict]:
+    async with SessionLocal.begin() as session:
+        obj = await session.get(Document, _uuid(doc_id))
+        if not obj:
+            return None
+        obj.filename = filename
+        obj.stored_path = stored_path
+        obj.file_size = file_size
+        obj.file_type = file_type
+        obj.notebooklm_source_id = None
+        obj.markdown_content = ""
+        obj.processing_status = "processing"
+        obj.progress_message = "Đang chuyển đổi tài liệu đã cập nhật"
+        obj.error_message = ""
+        obj.chunk_count = 0
+        obj.processed_at = None
+        obj.uploaded_at = datetime.now(timezone.utc)
+        await session.flush()
+        return _dict(obj)
+
+
 async def update_document_processing(
     doc_id: str,
     status: str = None,
