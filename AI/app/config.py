@@ -41,7 +41,12 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_dimensions: int = 768
     embedding_batch_size: int = 16
-    embedding_chunk_size: int = 1200
+    # 800 để khớp giới hạn 256 token của model PhoBERT (dangvantuan/
+    # vietnamese-embedding) — thực nghiệm: 800 ký tự OK, 1000 trở lên HF trả 400.
+    embedding_chunk_size: int = 800
+    # Lưới an toàn: cắt mỗi text về tối đa ngần này ký tự trước khi gọi API
+    # embedding (tránh 400 "index out of range" với text dài bất thường).
+    embedding_max_chars: int = 800
     ocr_service_url: str = "http://ocr:7100"
     doc_chunk_size: int = 80000
     scanner_max_tokens: int = 8192

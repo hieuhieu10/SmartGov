@@ -93,6 +93,10 @@ class EmbeddingService:
 
     def _embed_texts_huggingface(self, texts: list[str]) -> list[list[float]]:
         try:
+            # Model PhoBERT giới hạn 256 token; HF không tự truncate mà trả 400
+            # ("index out of range in self"). Cắt phía client để không bao giờ vượt.
+            max_chars = max(int(settings.embedding_max_chars or 800), 100)
+            texts = [text[:max_chars] for text in texts]
             vectors: list[list[float]] = []
             batch_size = max(int(settings.embedding_batch_size or 16), 1)
             headers = {"Accept": "application/json"}
