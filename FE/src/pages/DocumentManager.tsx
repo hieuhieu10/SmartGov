@@ -23,6 +23,7 @@ import {
   Pencil,
   Eye,
   Download,
+  RefreshCw,
   Save,
 } from "lucide-react";
 
@@ -71,6 +72,7 @@ export function RepositoryManager() {
   const [isRepoListCollapsed, setIsRepoListCollapsed] = useState(false);
   const [viewingDocId, setViewingDocId] = useState<string | null>(null);
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+  const [processingDocId, setProcessingDocId] = useState<string | null>(null);
   const [updatingDocId, setUpdatingDocId] = useState<string | null>(null);
   const [editTargetDoc, setEditTargetDoc] = useState<Document | null>(null);
   const [docxEditorDoc, setDocxEditorDoc] = useState<Document | null>(null);
@@ -552,6 +554,38 @@ export function RepositoryManager() {
       fetchRepos();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleConvertDoc = async (docId: string) => {
+    if (!selectedRepo || processingDocId) return;
+    setProcessingDocId(docId);
+    try {
+      await ApiClient.convertDocument(selectedRepo.id, docId);
+      await fetchDocs(selectedRepo.id);
+      await fetchRepos();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Lỗi OCR/chuyển đổi tài liệu");
+    } finally {
+      setProcessingDocId(null);
+    }
+  };
+
+  const handleDownloadMarkdown = async (doc: Document) => {
+    if (!selectedRepo) return;
+    try {
+      const blob = await ApiClient.downloadDocumentMarkdown(selectedRepo.id, doc.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stem = doc.filename.replace(/\.[^/.]+$/, "") || "document";
+      link.href = url;
+      link.download = `${stem}.md`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Chưa tải được file Markdown");
     }
   };
 
@@ -1079,6 +1113,33 @@ export function RepositoryManager() {
                               <Download size={14} />
                             )}
                           </button>
+                          {doc.processing_status === "completed" && (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadMarkdown(doc)}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                              title="Tải Markdown"
+                              aria-label={`Tải Markdown ${doc.filename}`}
+                            >
+                              <Download size={14} />
+                            </button>
+                          )}
+                          {!selectedRepo.is_shared && (
+                            <button
+                              type="button"
+                              onClick={() => handleConvertDoc(doc.id)}
+                              disabled={processingDocId === doc.id}
+                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-wait"
+                              title="OCR lại"
+                              aria-label={`OCR lại ${doc.filename}`}
+                            >
+                              {processingDocId === doc.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <RefreshCw size={14} />
+                              )}
+                            </button>
+                          )}
                           {!selectedRepo.is_shared && isDocxDocument(doc.filename) && (
                             <button
                               type="button"

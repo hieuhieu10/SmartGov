@@ -26,6 +26,7 @@ from typing import Optional
 
 from app.config import settings
 from app.services.llm_service import llm_service
+from app.services.markdown_chunking import split_markdown
 
 logger = logging.getLogger(__name__)
 _request_documents: ContextVar[list[dict]] = ContextVar("request_documents", default=[])
@@ -260,7 +261,7 @@ class DocumentScanner:
         chunk_size: int,
     ) -> dict:
         """Split a large document into chunks and scan each one."""
-        chunks = self._split_markdown(markdown_content, chunk_size)
+        chunks = split_markdown(markdown_content, chunk_size)
         all_excerpts = []
 
         logger.info(
@@ -336,47 +337,6 @@ TÀI LIỆU: {filename}
         except Exception as e:
             logger.error(f"[Scanner] LLM scan failed for '{filename}': {e}")
             return None
-
-    @staticmethod
-    def _split_markdown(text: str, chunk_size: int) -> list[str]:
-        """
-        Split markdown text into chunks, trying to break at paragraph boundaries.
-
-        Args:
-            text: Full markdown text.
-            chunk_size: Target chunk size in characters.
-
-        Returns:
-            List of text chunks.
-        """
-        if not text or chunk_size <= 0:
-            return [text] if text else []
-
-        if len(text) <= chunk_size:
-            return [text]
-
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = start + chunk_size
-
-            if end >= len(text):
-                chunks.append(text[start:])
-                break
-
-            # Try to find a good break point (paragraph or heading boundary)
-            break_point = end
-            for separator in ["\n\n", "\n# ", "\n## ", "\n### ", "\n"]:
-                # Search backward from end for a separator
-                pos = text.rfind(separator, start + chunk_size // 2, end)
-                if pos > start:
-                    break_point = pos + len(separator)
-                    break
-
-            chunks.append(text[start:break_point])
-            start = break_point
-
-        return chunks
 
     def format_scanner_results(
         self,
