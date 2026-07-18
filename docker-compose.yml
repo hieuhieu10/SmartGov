@@ -41,24 +41,12 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # LƯU Ý: KHÔNG khai báo VLLM_*/EMBEDDING_* ở đây — `environment:` sẽ đè lên
+    # `env_file:` (AI/.env) và biến ${...} đọc từ .env gốc repo, làm cấu hình
+    # trong AI/.env bị thay bằng default. Cấu hình model đặt trong AI/.env.
     environment:
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?AI_INTERNAL_TOKEN is required}
       AI_ENGINE: ${AI_ENGINE:-notebooklm}
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8000/v1}
-      VLLM_MODEL_NAME: ${VLLM_MODEL_NAME:-your-model}
-      VLLM_API_KEY: ${VLLM_API_KEY:-}
-      VLLM_FALLBACK_BASE_URL: ${VLLM_FALLBACK_BASE_URL:-}
-      VLLM_FALLBACK_MODEL_NAME: ${VLLM_FALLBACK_MODEL_NAME:-}
-      VLLM_FALLBACK_API_KEY: ${VLLM_FALLBACK_API_KEY:-}
-      OCR_VLLM_BASE_URL: ${OCR_VLLM_BASE_URL:-http://host.docker.internal:8686/v1}
-      OCR_VLLM_MODEL_NAME: ${OCR_VLLM_MODEL_NAME:-your-vision-model}
-      OCR_VLLM_API_KEY: ${OCR_VLLM_API_KEY:-}
-      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api-inference.huggingface.co/models/dangvantuan/vietnamese-embedding}
-      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-dangvantuan/vietnamese-embedding}
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
-      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-16}
-      EMBEDDING_CHUNK_SIZE: ${EMBEDDING_CHUNK_SIZE:-1200}
       OCR_SERVICE_URL: http://ocr:7100
     env_file:
       - path: ./AI/.env
