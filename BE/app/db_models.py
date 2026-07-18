@@ -60,7 +60,6 @@ class User(Base):
     dept_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), index=True
     )
-    ai_engine: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -84,8 +83,6 @@ class Repository(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    notebook_id: Mapped[str | None] = mapped_column(String(255))
-    notebooklm_session_fingerprint: Mapped[str | None] = mapped_column(String(128))
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("repository_categories.id", ondelete="SET NULL"), index=True
     )
@@ -104,7 +101,6 @@ class Document(Base):
     folder_key: Mapped[str] = mapped_column(String(80), default="draft", nullable=False, index=True)
     file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     file_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
-    notebooklm_source_id: Mapped[str | None] = mapped_column(String(255))
     markdown_content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     processing_status: Mapped[str] = mapped_column(String(50), default="queued", nullable=False, index=True)
     progress_message: Mapped[str] = mapped_column(Text, default="", nullable=False)

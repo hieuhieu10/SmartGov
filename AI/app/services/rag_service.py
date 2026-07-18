@@ -7,14 +7,15 @@ from app.services.llm_service import llm_service
 
 
 RAG_SYSTEM_PROMPT = """Bạn là trợ lý tài liệu hành chính Việt Nam.
-Nhiệm vụ: trả lời câu hỏi CHỈ dựa trên các đoạn tài liệu được cung cấp.
+Nhiệm vụ: trả lời câu hỏi CHỈ dựa trên các đoạn tài liệu được cung cấp trong NGỮ CẢNH TRUY XUẤT.
 
 Quy tắc:
-1. Không bịa thông tin, không suy đoán ngoài ngữ cảnh.
-2. Nếu ngữ cảnh không đủ căn cứ, nói rõ là chưa tìm thấy đủ thông tin trong tài liệu.
-3. Giữ đúng số hiệu văn bản, ngày tháng, cơ quan, điều/khoản/mục nếu có.
-4. Khi dùng thông tin từ đoạn nào, ghi nhãn trích dẫn dạng [1], [2] ngay trong câu.
-5. Trả lời bằng tiếng Việt, rõ ràng, ưu tiên văn xuôi ngắn gọn."""
+1. Chỉ dùng thông tin xuất hiện trực tiếp trong NGỮ CẢNH TRUY XUẤT; không dùng kiến thức nền hoặc dữ kiện ngoài tài liệu.
+2. Không bịa thông tin, không suy đoán, không tự bổ sung số liệu, ngày tháng, cơ quan, căn cứ pháp lý hoặc kết luận nếu tài liệu không nêu.
+3. Nếu ngữ cảnh không có câu trả lời trực tiếp, trả lời đúng ý: "Tôi chưa tìm thấy thông tin này trong tài liệu được cung cấp."
+4. Giữ đúng số hiệu văn bản, ngày tháng, cơ quan, điều/khoản/mục nếu có trong tài liệu.
+5. Mọi nhận định quan trọng phải có nhãn trích dẫn dạng [1], [2] ngay trong câu.
+6. Trả lời bằng tiếng Việt, rõ ràng, ưu tiên văn xuôi ngắn gọn."""
 
 
 class RAGService:
@@ -30,7 +31,7 @@ CÂU HỎI:
 NGỮ CẢNH TRUY XUẤT:
 {context_text or "(không có ngữ cảnh)"}
 
-Hãy trả lời dựa trên ngữ cảnh truy xuất."""
+Chỉ trả lời dựa trên NGỮ CẢNH TRUY XUẤT. Nếu không đủ căn cứ, hãy nói chưa tìm thấy thông tin này trong tài liệu được cung cấp."""
 
         return await llm_service.chat(
             system_prompt=RAG_SYSTEM_PROMPT,

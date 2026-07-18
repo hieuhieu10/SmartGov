@@ -132,7 +132,6 @@ async def create_user(
     role: str = "user",
     org_id: str = None,
     dept_id: str = None,
-    ai_engine: str = None,
 ) -> dict:
     async with SessionLocal.begin() as session:
         obj = User(
@@ -142,7 +141,6 @@ async def create_user(
             role=role,
             org_id=_uuid(org_id),
             dept_id=_uuid(dept_id),
-            ai_engine=ai_engine,
         )
         session.add(obj)
         await session.flush()
@@ -240,9 +238,7 @@ async def create_repository(
     user_id: str,
     name: str,
     description: str = "",
-    notebook_id: str = None,
     is_public: bool = False,
-    notebooklm_session_fingerprint: str = None,
     category_id: str = None,
 ) -> dict:
     async with SessionLocal.begin() as session:
@@ -250,9 +246,7 @@ async def create_repository(
             user_id=_uuid(user_id),
             name=name,
             description=description,
-            notebook_id=notebook_id,
             is_public=is_public,
-            notebooklm_session_fingerprint=notebooklm_session_fingerprint,
             category_id=_uuid(category_id),
         )
         session.add(obj)
@@ -278,37 +272,6 @@ async def touch_repository(repo_id: str) -> None:
     await _update(Repository, repo_id, {"last_used_at": datetime.now(timezone.utc)})
 
 
-async def count_active_notebooklm_repositories(session_fingerprint: str = "") -> int:
-    async with SessionLocal() as session:
-        conditions = [Repository.notebook_id.is_not(None)]
-        if session_fingerprint:
-            conditions.append(Repository.notebooklm_session_fingerprint == session_fingerprint)
-        return int(await session.scalar(select(func.count()).select_from(Repository).where(*conditions)) or 0)
-
-
-async def get_notebooklm_eviction_candidate(
-    session_fingerprint: str = "", exclude_repo_id: str = ""
-) -> Optional[dict]:
-    async with SessionLocal() as session:
-        conditions = [Repository.notebook_id.is_not(None)]
-        if session_fingerprint:
-            conditions.append(Repository.notebooklm_session_fingerprint == session_fingerprint)
-        if exclude_repo_id:
-            conditions.append(Repository.id != _uuid(exclude_repo_id))
-        obj = await session.scalar(
-            select(Repository).where(*conditions).order_by(Repository.last_used_at.asc()).limit(1)
-        )
-        return _dict(obj)
-
-
-async def clear_repository_document_source_ids(repository_id: str) -> None:
-    async with SessionLocal.begin() as session:
-        await session.execute(
-            update(Document)
-            .where(Document.repository_id == _uuid(repository_id))
-            .values(notebooklm_source_id=None)
-        )
-
 
 async def count_user_repositories(user_id: str) -> int:
     async with SessionLocal() as session:
@@ -330,19 +293,6 @@ async def update_repository(
         values["category_id"] = category_id
     return await _update(Repository, repo_id, values)
 
-
-async def set_repository_notebooklm_state(
-    repo_id: str, notebook_id: str | None, session_fingerprint: str | None
-) -> Optional[dict]:
-    async with SessionLocal.begin() as session:
-        obj = await session.get(Repository, _uuid(repo_id))
-        if not obj:
-            return None
-        obj.notebook_id = notebook_id
-        obj.notebooklm_session_fingerprint = session_fingerprint
-        obj.last_used_at = datetime.now(timezone.utc)
-        await session.flush()
-        return _dict(obj)
 
 
 async def delete_repository(repo_id: str) -> None:
@@ -371,7 +321,6 @@ async def create_document(
     stored_path: str,
     file_size: int = 0,
     file_type: str = "",
-    notebooklm_source_id: str = None,
     doc_id: str = None,
     **kwargs,
 ) -> dict:
@@ -381,10 +330,9 @@ async def create_document(
             repository_id=_uuid(repository_id),
             filename=filename,
             stored_path=stored_path,
-            folder_key=kwargs.pop("folder_key", "draft"),
+            folder_key=kwargs.pop("folder_key", repository_id),
             file_size=file_size,
             file_type=file_type,
-            notebooklm_source_id=notebooklm_source_id,
             **{key: value for key, value in kwargs.items() if hasattr(Document, key)},
         )
         session.add(obj)
@@ -416,10 +364,6 @@ async def get_document_by_id(doc_id: str) -> Optional[dict]:
     return await _get(Document, doc_id)
 
 
-async def update_document_source_id(doc_id: str, source_id: str) -> None:
-    await _update(Document, doc_id, {"notebooklm_source_id": source_id})
-
-
 async def update_document_file(
     doc_id: str,
     filename: str,
@@ -435,7 +379,6 @@ async def update_document_file(
         obj.stored_path = stored_path
         obj.file_size = file_size
         obj.file_type = file_type
-        obj.notebooklm_source_id = None
         obj.markdown_content = ""
         obj.processing_status = "processing"
         obj.progress_message = "Đang chuyển đổi tài liệu đã cập nhật"
@@ -563,6 +506,8 @@ async def search_document_chunks_hybrid(
     limit: int = 8,
     vector_candidates: int = 30,
     text_candidates: int = 30,
+    vector_weight: float = 0.6,
+    text_weight: float = 1.4,
 ) -> list[dict]:
     if not query_embedding:
         return []
@@ -636,8 +581,8 @@ async def search_document_chunks_hybrid(
                 coalesce(v.metadata, t.metadata) AS metadata,
                 v.vector_distance,
                 t.text_rank_score,
-                (coalesce(1.0 / (60 + v.vector_rank), 0.0) +
-                 coalesce(1.0 / (60 + t.text_rank), 0.0)) AS hybrid_score
+                (:vector_weight * coalesce(1.0 / (60 + v.vector_rank), 0.0) +
+                 :text_weight * coalesce(1.0 / (60 + t.text_rank), 0.0)) AS hybrid_score
             FROM vector_matches v
             FULL OUTER JOIN text_matches t ON t.id = v.id
         )
@@ -654,6 +599,8 @@ async def search_document_chunks_hybrid(
         "limit": int(limit),
         "vector_candidates": int(vector_candidates),
         "text_candidates": int(text_candidates),
+        "vector_weight": float(vector_weight),
+        "text_weight": float(text_weight),
     }
     async with SessionLocal() as session:
         rows = (await session.execute(sql, params)).mappings().all()

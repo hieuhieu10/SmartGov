@@ -27,7 +27,10 @@ class AgentState(TypedDict, total=False):
     plan: dict                  # Outline: {sections: [{title, key_points, search_queries}]}
 
     # ── Researcher output ─────────────────────────────────────────────
-    scanner_results: list[dict] # Results from DocumentScanner: [{filename, excerpts, doc_id}]
+    scanner_results: list[dict] # Shared retrieval (pgvector+FTS) entries, with
+                                 # DocumentScanner full-scan fallback per repo
+                                 # when a repo has no vectors yet: [{filename,
+                                 # excerpts, doc_id, citation_label?, section_label?}]
     research_context: str       # Formatted context string for Writer
 
     # ── Writer output ─────────────────────────────────────────────────

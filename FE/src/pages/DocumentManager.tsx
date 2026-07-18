@@ -12,6 +12,7 @@ import {
   File as FileIcon,
   ChevronRight,
   ChevronLeft,
+  FileText,
   FolderOpen,
   X,
   Globe,
@@ -25,6 +26,7 @@ import {
   Download,
   RefreshCw,
   Save,
+  Sparkles,
 } from "lucide-react";
 
 const DOCUMENT_FOLDERS = [
@@ -44,11 +46,14 @@ export function RepositoryManager() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedFolderKey, setSelectedFolderKey] =
     useState<DocumentFolderKey>("draft");
+  const [selectedDraftDocumentId, setSelectedDraftDocumentId] = useState("");
+  const [selectedFeedbackDocumentId, setSelectedFeedbackDocumentId] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     completed: number;
     total: number;
   } | null>(null);
+  const [processingDocId, setProcessingDocId] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [newRepoName, setNewRepoName] = useState("");
   const [newRepoDesc, setNewRepoDesc] = useState("");
@@ -70,9 +75,10 @@ export function RepositoryManager() {
   const [isCreating, setIsCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState(false);
   const [isRepoListCollapsed, setIsRepoListCollapsed] = useState(false);
+  const [isConsolidating, setIsConsolidating] = useState(false);
+  const [consolidateError, setConsolidateError] = useState("");
   const [viewingDocId, setViewingDocId] = useState<string | null>(null);
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
-  const [processingDocId, setProcessingDocId] = useState<string | null>(null);
   const [updatingDocId, setUpdatingDocId] = useState<string | null>(null);
   const [editTargetDoc, setEditTargetDoc] = useState<Document | null>(null);
   const [docxEditorDoc, setDocxEditorDoc] = useState<Document | null>(null);
@@ -179,6 +185,8 @@ export function RepositoryManager() {
   const handleSelectRepo = (repo: Repository) => {
     setSelectedRepo(repo);
     setSelectedFolderKey("draft");
+    setSelectedDraftDocumentId("");
+    setSelectedFeedbackDocumentId("");
   };
 
   const handleViewDoc = async (doc: Document) => {
@@ -557,6 +565,23 @@ export function RepositoryManager() {
     }
   };
 
+  const handleConsolidateFeedback = async () => {
+    if (!selectedRepo || isConsolidating) return;
+    setConsolidateError("");
+    setIsConsolidating(true);
+    try {
+      await ApiClient.consolidateFeedback(selectedRepo.id, selectedFeedbackDocumentId);
+      await fetchDocs(selectedRepo.id);
+      setSelectedFolderKey("summary");
+    } catch (err: any) {
+      setConsolidateError(
+        err?.response?.data?.detail || "Không thể tạo bản tổng hợp. Vui lòng thử lại."
+      );
+    } finally {
+      setIsConsolidating(false);
+    }
+  };
+
   const handleConvertDoc = async (docId: string) => {
     if (!selectedRepo || processingDocId) return;
     setProcessingDocId(docId);
@@ -565,9 +590,9 @@ export function RepositoryManager() {
       await fetchDocs(selectedRepo.id);
       await fetchRepos();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi OCR/chuyển đổi tài liệu");
+      alert(err.response?.data?.detail || 'Lỗi OCR/chuyển đổi tài liệu');
     } finally {
-      setProcessingDocId(null);
+      setProcessingDocId('');
     }
   };
 
@@ -576,8 +601,8 @@ export function RepositoryManager() {
     try {
       const blob = await ApiClient.downloadDocumentMarkdown(selectedRepo.id, doc.id);
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const stem = doc.filename.replace(/\.[^/.]+$/, "") || "document";
+      const link = document.createElement('a');
+      const stem = doc.filename.replace(/\.[^/.]+$/, '') || 'document';
       link.href = url;
       link.download = `${stem}.md`;
       document.body.appendChild(link);
@@ -585,7 +610,7 @@ export function RepositoryManager() {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Chưa tải được file Markdown");
+      alert(err.response?.data?.detail || 'Chưa tải được file Markdown');
     }
   };
 
@@ -600,6 +625,12 @@ export function RepositoryManager() {
     DOCUMENT_FOLDERS[0];
   const visibleDocuments = documents.filter(
     (doc) => (doc.folder_key || "draft") === selectedFolderKey
+  );
+  const draftDocuments = documents.filter(
+    (doc) => (doc.folder_key || "draft") === "draft"
+  );
+  const feedbackDocuments = documents.filter(
+    (doc) => (doc.folder_key || "draft") === "feedback"
   );
   const folderDocumentCount = (folderKey: DocumentFolderKey) =>
     documents.filter((doc) => (doc.folder_key || "draft") === folderKey).length;
@@ -974,7 +1005,65 @@ export function RepositoryManager() {
                   </div>
                 </div>
 
-                {visibleDocuments.length === 0 && !selectedRepo.is_shared && (
+                {/* Nút "Soạn tài liệu" cố định ở góc dưới bên phải — AI đọc các
+                    văn bản góp ý và soạn Bảng tổng hợp tiếp thu, giải trình. */}
+                {selectedFolderKey === "draft" && (
+                  <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+                    <p className="text-sm font-semibold text-slate-800">Chọn file dự thảo từ kho dữ liệu</p>
+                    <p className="mt-1 text-xs text-slate-500">File dự thảo được chọn từ tài liệu đã có trong kho; không tải file mới tại đây.</p>
+                    <select
+                      value={selectedDraftDocumentId}
+                      onChange={(event) => setSelectedDraftDocumentId(event.target.value)}
+                      className="mt-3 w-full max-w-xl rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                    >
+                      <option value="">-- Chọn file dự thảo --</option>
+                      {draftDocuments.map((doc) => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
+                    </select>
+                  </div>
+                )}
+                {selectedFolderKey === "feedback" && !selectedRepo.is_shared && (
+                  <div className="mt-5 flex flex-wrap items-end justify-between gap-4 rounded-xl border border-violet-100 bg-violet-50/60 p-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-800">Chọn một văn bản góp ý từ kho dữ liệu</p>
+                      <p className="mt-1 text-xs text-slate-500">Chỉ văn bản đã chọn sẽ được dùng để soạn Bảng tổng hợp ý kiến.</p>
+                      <select
+                        value={selectedFeedbackDocumentId}
+                        onChange={(event) => setSelectedFeedbackDocumentId(event.target.value)}
+                        className="mt-3 w-full max-w-xl rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        <option value="">-- Chọn một văn bản góp ý --</option>
+                        {feedbackDocuments.map((doc) => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                    {consolidateError && (
+                      <p className="max-w-xs rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 shadow-sm ring-1 ring-rose-100">
+                        {consolidateError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleConsolidateFeedback}
+                      disabled={isConsolidating || !selectedFeedbackDocumentId}
+                      className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
+                      title={
+                        !selectedFeedbackDocumentId
+                          ? "Chọn một văn bản góp ý trước khi soạn tài liệu"
+                          : "AI đọc văn bản góp ý đã chọn và soạn Bảng tổng hợp tiếp thu, giải trình"
+                      }
+                    >
+                      {isConsolidating ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={18} />
+                      )}
+                      {isConsolidating ? "Đang soạn..." : "Soạn tài liệu"}
+                    </button>
+                    </div>
+                  </div>
+                )}
+
+                {false && visibleDocuments.length === 0 && !selectedRepo?.is_shared && (
                   <div className="pt-5">
                     <label
                       onDragEnter={handleDragOver}
@@ -1002,7 +1091,7 @@ export function RepositoryManager() {
                       </span>
                       <span className="text-xs text-slate-500 text-center">
                         {isUploading && uploadProgress
-                          ? `Đang upload ${uploadProgress.completed}/${uploadProgress.total} file...`
+                          ? `Đang upload ${uploadProgress?.completed ?? 0}/${uploadProgress?.total ?? 0} file...`
                           : "hoặc bấm để chọn nhiều file"}
                       </span>
                       <input
@@ -1016,7 +1105,7 @@ export function RepositoryManager() {
                   </div>
                 )}
 
-                {!selectedRepo.is_shared && visibleDocuments.length > 0 && (
+                {false && !selectedRepo?.is_shared && visibleDocuments.length > 0 && (
                   <label
                     onDragEnter={handleDragOver}
                     onDragOver={handleDragOver}
@@ -1040,7 +1129,7 @@ export function RepositoryManager() {
                     )}
                     <span className="text-sm font-medium text-slate-700">
                       {isUploading && uploadProgress
-                        ? `Đang upload ${uploadProgress.completed}/${uploadProgress.total} file...`
+                        ? `Đang upload ${uploadProgress?.completed ?? 0}/${uploadProgress?.total ?? 0} file...`
                         : `Kéo thả nhiều file vào ${selectedFolder.name}`}
                     </span>
                     <input
@@ -1121,7 +1210,7 @@ export function RepositoryManager() {
                               title="Tải Markdown"
                               aria-label={`Tải Markdown ${doc.filename}`}
                             >
-                              <Download size={14} />
+                              <FileText size={14} />
                             </button>
                           )}
                           {!selectedRepo.is_shared && (
@@ -1129,7 +1218,7 @@ export function RepositoryManager() {
                               type="button"
                               onClick={() => handleConvertDoc(doc.id)}
                               disabled={processingDocId === doc.id}
-                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-wait"
+                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-not-allowed"
                               title="OCR lại"
                               aria-label={`OCR lại ${doc.filename}`}
                             >

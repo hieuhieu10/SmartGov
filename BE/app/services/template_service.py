@@ -29,7 +29,7 @@ DOC_TYPE_MAP = {
 
 
 class TemplateService:
-    async def extract_headings(self, file_path: str, engine: str = "notebooklm") -> dict:
+    async def extract_headings(self, file_path: str, engine: str = "self_hosted") -> dict:
         return await ai_client.request(
             "/internal/template/extract",
             engine=engine,
@@ -39,13 +39,12 @@ class TemplateService:
     async def generate_from_headings(
         self,
         headings: list[dict],
-        notebook_id: str,
         doc_type_label: str,
         trich_yeu: str,
         user_input: dict,
         repo_id: str = "",
         selected_document_ids: list[str] | None = None,
-        engine: str = "notebooklm",
+        engine: str = "self_hosted",
     ) -> dict:
         selected = selected_document_ids or []
         data = await ai_client.request(
@@ -54,7 +53,6 @@ class TemplateService:
             engine=engine,
             input_data={
                 "headings": headings,
-                "notebook_id": notebook_id,
                 "doc_type_label": doc_type_label,
                 "trich_yeu": trich_yeu,
                 "user_input": user_input,

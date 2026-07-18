@@ -56,7 +56,6 @@ export interface Repository {
   id: string;
   name: string;
   description: string;
-  notebook_id?: string;
   category_id?: string | null;
   category_name?: string | null;
   document_count: number;
@@ -116,7 +115,6 @@ export interface AdminUser {
   org_name?: string;
   dept_id?: string;
   dept_name?: string;
-  ai_engine?: string | null;
   created_at?: string;
 }
 
@@ -141,6 +139,23 @@ export interface ChatMessage {
   content: string;
   created_at: string;
 }
+
+export interface ChatChart {
+  chart_type: 'pie' | 'bar' | 'line' | 'scatter' | 'table';
+  title: string;
+  description: string;
+  is_overview: boolean;
+  labels: string[];
+  values: number[];
+  x: number[];
+  y: number[];
+  x_label: string;
+  y_label: string;
+}
+
+export type ChatStreamEvent =
+  | { type: 'chunk'; content: string }
+  | { type: 'chart'; charts: ChatChart[] };
 
 export interface DocumentDatasetWordPayload {
   document_data: Record<string, any>;
@@ -278,6 +293,17 @@ export const ApiClient = {
   deleteDocument: (repoId: string, docId: string) =>
     api.delete(`/repositories/${repoId}/documents/${docId}`),
 
+  consolidateFeedback: (repoId: string, feedbackDocumentId: string) =>
+    api.post<Document>(`/repositories/${repoId}/documents/consolidate`, {
+      feedback_document_id: feedbackDocumentId,
+    }).then(r => r.data),
+
+  consolidateDrafting: (draftRepoId: string, draftDocumentId: string, feedbackRepoId: string) =>
+    api.post<Document>(`/repositories/${draftRepoId}/documents/consolidate`, {
+      draft_document_id: draftDocumentId,
+      feedback_repository_id: feedbackRepoId,
+    }).then(r => r.data),
+
   getDocumentPreview: (repoId: string, docId: string) =>
     api.get(`/repositories/${repoId}/documents/${docId}/preview`, { responseType: 'text' }).then(r => r.data),
 
@@ -336,7 +362,7 @@ export const ApiClient = {
     api.delete(`/revision-tasks/${taskId}`),
 
   // ── Chat (SSE) ──
-  chatStream: async function* (repoId: string, message: string): AsyncGenerator<string> {
+  chatStream: async function* (repoId: string, message: string): AsyncGenerator<ChatStreamEvent> {
     const token = getStoredToken();
     const response = await fetch(`${API_BASE}/repositories/${repoId}/chat`, {
       method: 'POST',
@@ -368,7 +394,8 @@ export const ApiClient = {
         if (line.startsWith('data: ')) {
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.type === 'chunk') yield data.content;
+            if (data.type === 'chunk') yield { type: 'chunk', content: String(data.content || '') };
+            if (data.type === 'chart' && Array.isArray(data.charts)) yield { type: 'chart', charts: data.charts };
             if (data.type === 'done') return;
           } catch { /* skip invalid */ }
         }
@@ -412,10 +439,10 @@ export const ApiClient = {
   getUsers: () =>
     api.get<AdminUser[]>('/admin/users').then(r => r.data),
 
-  createUser: (data: { username: string; password: string; full_name: string; role: string; org_id?: string; dept_id?: string; ai_engine?: string }) =>
+  createUser: (data: { username: string; password: string; full_name: string; role: string; org_id?: string; dept_id?: string }) =>
     api.post<AdminUser>('/admin/users', data).then(r => r.data),
 
-  updateUser: (id: string, data: { full_name?: string; password?: string; role?: string; org_id?: string; dept_id?: string; ai_engine?: string }) =>
+  updateUser: (id: string, data: { full_name?: string; password?: string; role?: string; org_id?: string; dept_id?: string }) =>
     api.put<AdminUser>(`/admin/users/${id}`, data).then(r => r.data),
 
   deleteAdminUser: (id: string) =>

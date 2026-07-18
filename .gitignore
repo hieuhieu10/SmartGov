@@ -16,6 +16,7 @@ BE/repo_files/
 AI/uploads/
 AI/outputs/
 AI/repo_files/
+/outputs/
 
 # Node
 FE/node_modules/

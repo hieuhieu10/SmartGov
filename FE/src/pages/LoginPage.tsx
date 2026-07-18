@@ -51,7 +51,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-2xl shadow-blue-500/30 mb-4">
             <span className="text-white font-bold text-2xl">AI</span>
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Office AI</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Trợ lý Ơi</h1>
           <p className="text-blue-300/70 mt-1 text-sm font-medium tracking-wide">HỖ TRỢ SOẠN THẢO VĂN BẢN</p>
         </div>
 

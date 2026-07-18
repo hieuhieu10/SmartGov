@@ -18,37 +18,50 @@ logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Async client for vLLM / OpenAI-compatible inference servers."""
+    """Async client for vLLM / OpenAI-compatible inference servers.
+
+    Hỗ trợ 1 model chính (vllm_*) + 1 model dự phòng (vllm_fallback_*, tùy
+    chọn). Nếu model chính lỗi (timeout, 5xx, bị chặn...), tự động thử lại
+    bằng model dự phòng trước khi báo lỗi.
+    """
 
     def __init__(self):
         self._client: Optional[AsyncOpenAI] = None
         self._fallback_client: Optional[AsyncOpenAI] = None
 
     def _get_client(self) -> AsyncOpenAI:
-        """Lazy-init the AsyncOpenAI client."""
+        """Lazy-init the AsyncOpenAI client (model chính)."""
         if self._client is None:
+            default_headers = (
+                {"User-Agent": settings.vllm_user_agent}
+                if settings.vllm_user_agent
+                else None
+            )
             self._client = AsyncOpenAI(
                 base_url=settings.vllm_base_url,
                 api_key=settings.vllm_api_key,
-                timeout=600.0,  # 10 phút — tài liệu lớn cần thời gian xử lý
+                # Fail-fast: hết timeout là bỏ ngay, KHÔNG retry (max_retries=0),
+                # để rơi sang model dự phòng luôn thay vì retry nhiều lần chờ lâu.
+                timeout=settings.vllm_primary_timeout,
+                max_retries=0,
+                default_headers=default_headers,
             )
             logger.info(f"LLM client initialized: {settings.vllm_base_url} / {settings.vllm_model_name}")
         return self._client
 
-    def _has_fallback(self) -> bool:
-        return bool(settings.vllm_fallback_base_url and settings.vllm_fallback_model_name)
-
-    def _get_fallback_client(self) -> AsyncOpenAI:
+    def _get_fallback_client(self) -> Optional[AsyncOpenAI]:
+        """Lazy-init the AsyncOpenAI client dự phòng, nếu có cấu hình."""
+        if not (settings.vllm_fallback_base_url and settings.vllm_fallback_model_name):
+            return None
         if self._fallback_client is None:
             self._fallback_client = AsyncOpenAI(
                 base_url=settings.vllm_fallback_base_url,
                 api_key=settings.vllm_fallback_api_key or settings.vllm_api_key,
-                timeout=600.0,
+                timeout=settings.vllm_fallback_timeout,
             )
             logger.info(
-                "Fallback LLM client initialized: %s / %s",
-                settings.vllm_fallback_base_url,
-                settings.vllm_fallback_model_name,
+                f"LLM fallback client initialized: "
+                f"{settings.vllm_fallback_base_url} / {settings.vllm_fallback_model_name}"
             )
         return self._fallback_client
 
@@ -56,54 +69,85 @@ class LLMService:
                    temperature: float = 0.3, max_tokens: int = 4096) -> str:
         """
         Send a chat completion request and return the assistant's response.
+
+        Thử model chính trước; nếu lỗi và có cấu hình model dự phòng, tự
+        động thử lại bằng model dự phòng. Nếu phản hồi bị cắt vì hết token
+        (finish_reason=length), tự nối tiếp (xem ``_chat_with_continuation``).
         """
         try:
-            return await self._chat_with_client(
-                self._get_client(),
-                settings.vllm_model_name,
-                system_prompt,
-                user_prompt,
-                temperature,
-                max_tokens,
+            return await self._chat_with_continuation(
+                self._get_client(), settings.vllm_model_name,
+                system_prompt, user_prompt, temperature, max_tokens,
             )
         except Exception as e:
-            if self._has_fallback():
-                logger.warning("Primary LLM request failed; trying fallback: %s", e)
-                return await self._chat_with_client(
-                    self._get_fallback_client(),
-                    settings.vllm_fallback_model_name,
-                    system_prompt,
-                    user_prompt,
-                    temperature,
-                    max_tokens,
-                )
-            logger.error(f"LLM request failed: {e}")
-            raise
+            fallback_client = self._get_fallback_client()
+            if fallback_client is None:
+                logger.error(f"LLM request failed (no fallback configured): {e}")
+                raise
+            logger.warning(f"LLM primary request failed, retrying with fallback: {e}")
+            return await self._chat_with_continuation(
+                fallback_client, settings.vllm_fallback_model_name,
+                system_prompt, user_prompt, temperature, max_tokens,
+            )
 
-    async def _chat_with_client(
-        self,
-        client: AsyncOpenAI,
-        model_name: str,
-        system_prompt: str,
-        user_prompt: str,
-        temperature: float,
-        max_tokens: int,
+    async def _chat_with_continuation(
+        self, client: AsyncOpenAI, model: str, system_prompt: str,
+        user_prompt: str, temperature: float, max_tokens: int,
     ) -> str:
+        """(B) Gọi model; nếu bị cắt vì hết token thì tự yêu cầu viết tiếp và nối
+        lại, tối đa ``llm_max_continuations`` lần, để sinh được tài liệu dài."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        content, finish = await self._chat_once(client, model, messages, temperature, max_tokens)
+        full = content
+
+        max_cont = settings.llm_max_continuations if settings.llm_auto_continue else 0
+        attempts = 0
+        while finish == "length" and attempts < max_cont:
+            attempts += 1
+            logger.info(f"LLM bị cắt vì hết token, nối tiếp lần {attempts}/{max_cont} (model={model})")
+            cont_messages = messages + [
+                {"role": "assistant", "content": full},
+                {"role": "user", "content": (
+                    "Phần trả lời trên bị cắt vì hết độ dài. Hãy VIẾT TIẾP NGAY tại chỗ "
+                    "bị cắt, nối liền mạch, TUYỆT ĐỐI không lặp lại nội dung đã viết, "
+                    "không mở đầu lại, không thêm lời dẫn."
+                )},
+            ]
+            part, finish = await self._chat_once(
+                client, model, cont_messages, temperature, max_tokens
+            )
+            if not part.strip():
+                break
+            full += part
+
+        if finish == "length":
+            logger.warning(
+                f"LLM vẫn bị cắt sau {attempts} lần nối tiếp (model={model}, "
+                f"max_tokens={max_tokens})"
+            )
+        return full
+
+    @staticmethod
+    async def _chat_once(client: AsyncOpenAI, model: str, messages: list[dict],
+                         temperature: float, max_tokens: int) -> tuple[str, str]:
         response = await client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            model=model,
+            messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            # Tắt chế độ suy luận của model reasoning (Qwen3...) qua tham số
+            # chuẩn của vLLM, thay vì dựa vào chuỗi "/no_think" rải rác trong
+            # từng prompt. Nếu không tắt, model có thể dùng hết max_tokens cho
+            # phần <think> và trả về content rỗng dù finish_reason=length.
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
         content = response.choices[0].message.content or ""
         finish_reason = response.choices[0].finish_reason or "unknown"
-        logger.info("LLM response: %d chars (finish_reason=%s, model=%s)", len(content), finish_reason, model_name)
-        if finish_reason == "length":
-            logger.warning("LLM response TRUNCATED (max_tokens=%s, model=%s)", max_tokens, model_name)
-        return content
+        logger.info(f"LLM response ({model}): {len(content)} chars (finish_reason={finish_reason})")
+        return content, finish_reason
 
     async def chat_json(self, system_prompt: str, user_prompt: str,
                         temperature: float = 0.1, max_tokens: int = 4096) -> dict:

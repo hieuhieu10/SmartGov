@@ -1,22 +1,28 @@
 """
-Researcher Agent — Scan repository documents for relevant content.
+Researcher Agent — Retrieve relevant content for each planned section.
 
-Uses DocumentScanner to sequentially scan each document in the repository,
-extracting relevant excerpts based on the Planner's outline.
+Retrieval CHUNG với Chat RAG: mỗi section query được gửi tới BE qua
+`retrieval_client` để chạy hybrid search (pgvector + FTS) trên
+`document_chunks` — thay vì tự quét toàn bộ tài liệu bằng LLM. Nếu một
+repository chưa có vector (ví dụ tài liệu vừa upload, embedding đang lỗi),
+`DocumentScanner` được dùng làm fallback CHỈ cho repository đó, để Agent vẫn
+có dữ liệu ngay cả khi vector store chưa sẵn sàng.
 """
 
-import json
 import logging
 
 from app.config import settings
 from app.services.document_scanner import document_scanner
+from app.services.retrieval_client import retrieval_client
 
 logger = logging.getLogger(__name__)
+
+_RETRIEVAL_TOP_K_PER_SECTION = 8
 
 
 async def researcher_node(state: dict) -> dict:
     """
-    Researcher Agent: scan repository documents for relevant data.
+    Researcher Agent: retrieve relevant data for each planned section.
 
     Input state: plan, warehouse_ids
     Output state: scanner_results, research_context
@@ -40,19 +46,11 @@ async def researcher_node(state: dict) -> dict:
     all_results = []
     section_contexts = []
     for section_query in section_queries:
-        section_results = []
-        for repo_id in warehouse_ids:
-            results = await document_scanner.scan_repository(
-                repo_id=repo_id,
-                outline=section_query["query"],
-                document_ids=selected_document_ids,
-            )
-            section_results.extend(results)
-            all_results.extend(results)
-        section_contexts.append({
-            "title": section_query["title"],
-            "context": document_scanner.format_scanner_results(section_results, max_chars=60000),
-        })
+        entries, context_text = await _retrieve_section(
+            section_query["query"], warehouse_ids, selected_document_ids
+        )
+        all_results.extend(entries)
+        section_contexts.append({"title": section_query["title"], "context": context_text})
 
     research_context = _format_section_contexts(section_contexts)
 
@@ -64,7 +62,7 @@ async def researcher_node(state: dict) -> dict:
         )
 
     logger.info(
-        f"[Researcher] Scan complete: {len(all_results)} relevant documents, "
+        f"[Researcher] Retrieval complete: {len(all_results)} relevant excerpts, "
         f"context={len(research_context)} chars "
         f"(limit={settings.context_max_chars})"
     )
@@ -73,6 +71,89 @@ async def researcher_node(state: dict) -> dict:
         "scanner_results": all_results,
         "research_context": research_context,
     }
+
+
+async def _retrieve_section(
+    query: str,
+    warehouse_ids: list[str],
+    selected_document_ids: list[str],
+) -> tuple[list[dict], str]:
+    """Retrieve content for one section, per repository.
+
+    Mỗi repo: thử shared retrieval (pgvector+FTS) trước; nếu repo đó chưa có
+    vector nào (rỗng), fallback quét toàn bộ tài liệu bằng LLM CHỈ cho repo đó.
+    """
+    entries: list[dict] = []
+    shared_contexts: list[dict] = []
+    fallback_blocks: list[str] = []
+
+    for repo_id in warehouse_ids:
+        contexts = await retrieval_client.search(
+            repo_id,
+            query,
+            document_ids=selected_document_ids or None,
+            limit=_RETRIEVAL_TOP_K_PER_SECTION,
+        )
+        if contexts:
+            shared_contexts.extend(contexts)
+            entries.extend(_context_to_entry(context) for context in contexts)
+            continue
+
+        # Fallback an toàn: repo này chưa có vector (chưa xử lý xong / embedding
+        # lỗi) — quét toàn bộ tài liệu bằng LLM như trước đây, chỉ cho repo này.
+        logger.info(
+            "[Researcher] No shared-retrieval contexts for repo %s; falling back to full-document scan",
+            repo_id,
+        )
+        scanner_results = await document_scanner.scan_repository(
+            repo_id=repo_id,
+            outline=query,
+            document_ids=selected_document_ids,
+        )
+        entries.extend(scanner_results)
+        if scanner_results:
+            fallback_text = document_scanner.format_scanner_results(scanner_results, max_chars=60000)
+            if fallback_text and fallback_text != "Không tìm thấy dữ liệu liên quan trong kho.":
+                fallback_blocks.append(fallback_text)
+
+    blocks = [_format_shared_contexts(shared_contexts)] if shared_contexts else []
+    blocks.extend(fallback_blocks)
+
+    if not blocks:
+        return entries, "Không tìm thấy dữ liệu liên quan trong kho."
+    return entries, "\n\n---\n\n".join(blocks)
+
+
+def _context_to_entry(context: dict) -> dict:
+    """Chuẩn hóa 1 context pgvector thành entry tương thích scanner_results
+    (dùng bởi citation_checker: chỉ cần `filename`/`source_file`)."""
+    return {
+        "filename": context.get("filename", ""),
+        "doc_id": context.get("document_id", ""),
+        "excerpts": [context.get("chunk_text", "")],
+        "citation_label": context.get("citation_label", ""),
+        "section_label": context.get("section_label", ""),
+        "source": "shared_retrieval",
+    }
+
+
+def _format_shared_contexts(contexts: list[dict], max_chars: int = 60000) -> str:
+    if not contexts:
+        return "Không tìm thấy dữ liệu liên quan trong kho."
+    blocks = []
+    for context in contexts:
+        label = (
+            context.get("citation_label")
+            or context.get("section_label")
+            or context.get("filename")
+            or "Nguồn"
+        )
+        header = f"[Tài liệu: {context.get('filename') or 'Không rõ nguồn'} — {label}]"
+        blocks.append(f"{header}\n{context.get('chunk_text', '')}")
+    text = "\n\n---\n\n".join(blocks)
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n[... nội dung bị cắt do giới hạn context]"
+    return text
 
 
 def _build_outline_from_plan(
