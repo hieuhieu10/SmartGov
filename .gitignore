@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Environment
+.env
+
+# Runtime data (created by Docker volumes)
+BE/data/
+BE/uploads/
+BE/outputs/
+BE/repo_files/
+AI/uploads/
+AI/outputs/
+AI/repo_files/
+/outputs/
+
+# Node
+FE/node_modules/
+FE/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

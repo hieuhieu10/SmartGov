@@ -1,0 +1,12 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-docx==1.1.2
+docxtpl==0.16.7
+pydantic==2.9.0
+pydantic-settings==2.5.0
+openai==1.58.0
+markitdown>=0.1.0
+langgraph>=0.2.0
+langchain-core>=0.3.0
+httpx>=0.28.0
+google-genai>=1.0.0
