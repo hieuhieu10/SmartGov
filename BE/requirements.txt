@@ -10,6 +10,7 @@ SQLAlchemy[asyncio]>=2.0.36
 asyncpg>=0.30.0
 alembic>=1.14.0
 httpx>=0.28.0
+pgvector>=0.3.6
 PyJWT==2.9.0
 bcrypt==4.2.0
 sse-starlette==2.1.0

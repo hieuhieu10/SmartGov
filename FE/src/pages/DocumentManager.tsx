@@ -1,5 +1,7 @@
-import { useState, useCallback, useEffect } from "react";
-import { ApiClient } from "../api/client";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { DocxEditor, type DocxEditorRef } from "@eigenpal/docx-editor-react";
+import "@eigenpal/docx-editor-react/styles.css";
+import { ApiClient, getStoredUser } from "../api/client";
 import type { Repository, Document, RepositoryCategory } from "../api/client";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -7,7 +9,7 @@ import {
   Plus,
   Trash2,
   UploadCloud,
-  File,
+  File as FileIcon,
   ChevronRight,
   ChevronLeft,
   FolderOpen,
@@ -19,6 +21,10 @@ import {
   CheckCircle2,
   Folder,
   Pencil,
+  Eye,
+  Download,
+  RefreshCw,
+  Save,
 } from "lucide-react";
 
 const DOCUMENT_FOLDERS = [
@@ -64,6 +70,24 @@ export function RepositoryManager() {
   const [isCreating, setIsCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState(false);
   const [isRepoListCollapsed, setIsRepoListCollapsed] = useState(false);
+  const [viewingDocId, setViewingDocId] = useState<string | null>(null);
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+  const [processingDocId, setProcessingDocId] = useState<string | null>(null);
+  const [updatingDocId, setUpdatingDocId] = useState<string | null>(null);
+  const [editTargetDoc, setEditTargetDoc] = useState<Document | null>(null);
+  const [docxEditorDoc, setDocxEditorDoc] = useState<Document | null>(null);
+  const [docxEditorBuffer, setDocxEditorBuffer] = useState<ArrayBuffer | null>(
+    null
+  );
+  const [docxEditorError, setDocxEditorError] = useState("");
+  const [docxEditorDirty, setDocxEditorDirty] = useState(false);
+  const [loadingDocxEditorId, setLoadingDocxEditorId] = useState<string | null>(
+    null
+  );
+  const [isDocxEditorSaving, setIsDocxEditorSaving] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement | null>(null);
+  const docxEditorRef = useRef<DocxEditorRef | null>(null);
+  const docxEditorSavingRef = useRef(false);
 
   const fetchRepos = useCallback(async () => {
     try {
@@ -155,6 +179,153 @@ export function RepositoryManager() {
   const handleSelectRepo = (repo: Repository) => {
     setSelectedRepo(repo);
     setSelectedFolderKey("draft");
+  };
+
+  const handleViewDoc = async (doc: Document) => {
+    if (!selectedRepo || viewingDocId) return;
+
+    const popup = window.open("", "_blank");
+    setViewingDocId(doc.id);
+    try {
+      const blob = await ApiClient.getDocumentFile(selectedRepo.id, doc.id);
+      const url = URL.createObjectURL(blob);
+      if (popup) {
+        popup.location.href = url;
+      } else {
+        window.open(url, "_blank");
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: any) {
+      popup?.close();
+      alert(err.response?.data?.detail || "Không thể mở file");
+    } finally {
+      setViewingDocId(null);
+    }
+  };
+
+  const handleDownloadDoc = async (doc: Document) => {
+    if (!selectedRepo || downloadingDocId) return;
+
+    setDownloadingDocId(doc.id);
+    try {
+      const blob = await ApiClient.getDocumentFile(selectedRepo.id, doc.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = doc.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Không thể tải file");
+    } finally {
+      setDownloadingDocId(null);
+    }
+  };
+
+  const isWordDocument = (filename: string) =>
+    /\.(doc|docx)$/i.test(filename.trim());
+
+  const isDocxDocument = (filename: string) => /\.docx$/i.test(filename.trim());
+
+  const closeDocxEditor = () => {
+    if (isDocxEditorSaving) return;
+    if (
+      docxEditorDirty &&
+      !confirm("Đóng trình soạn thảo? Các thay đổi chưa lưu sẽ bị mất.")
+    ) {
+      return;
+    }
+    setDocxEditorDoc(null);
+    setDocxEditorBuffer(null);
+    setDocxEditorError("");
+    setDocxEditorDirty(false);
+  };
+
+  const openDocxEditor = async (doc: Document) => {
+    if (!selectedRepo || selectedRepo.is_shared || loadingDocxEditorId) return;
+    if (!isDocxDocument(doc.filename)) {
+      alert("Trình soạn thảo trực tiếp hiện chỉ hỗ trợ file .docx.");
+      return;
+    }
+
+    setDocxEditorDoc(doc);
+    setDocxEditorBuffer(null);
+    setDocxEditorError("");
+    setDocxEditorDirty(false);
+    setLoadingDocxEditorId(doc.id);
+    try {
+      const blob = await ApiClient.getDocumentFile(selectedRepo.id, doc.id);
+      setDocxEditorBuffer(await blob.arrayBuffer());
+    } catch (err: any) {
+      setDocxEditorError(err.response?.data?.detail || "Không thể mở file DOCX");
+    } finally {
+      setLoadingDocxEditorId(null);
+    }
+  };
+
+  const saveDocxEditorBuffer = async (buffer: ArrayBuffer) => {
+    if (!selectedRepo || !docxEditorDoc || docxEditorSavingRef.current) return;
+
+    docxEditorSavingRef.current = true;
+    setIsDocxEditorSaving(true);
+    setDocxEditorError("");
+    try {
+      const file = new File([buffer], docxEditorDoc.filename, {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      await ApiClient.replaceDocument(selectedRepo.id, docxEditorDoc.id, file);
+      await fetchDocs(selectedRepo.id);
+      await fetchRepos();
+      setDocxEditorDirty(false);
+      setDocxEditorDoc(null);
+      setDocxEditorBuffer(null);
+    } catch (err: any) {
+      setDocxEditorError(err.response?.data?.detail || "Không thể lưu file DOCX");
+    } finally {
+      docxEditorSavingRef.current = false;
+      setIsDocxEditorSaving(false);
+    }
+  };
+
+  const saveDocxEditor = async () => {
+    const buffer = await docxEditorRef.current?.save({ selective: false });
+    if (!buffer) {
+      setDocxEditorError("Không thể xuất nội dung DOCX để lưu.");
+      return;
+    }
+    await saveDocxEditorBuffer(buffer);
+  };
+
+  const openReplaceDocPicker = (doc: Document) => {
+    if (!selectedRepo || selectedRepo.is_shared || updatingDocId) return;
+    setEditTargetDoc(doc);
+    editFileInputRef.current?.click();
+  };
+
+  const handleReplaceDoc = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !selectedRepo || !editTargetDoc) return;
+
+    if (!isWordDocument(file.name)) {
+      alert("Vui lòng chọn file Word (.doc hoặc .docx) để thay thế.");
+      setEditTargetDoc(null);
+      return;
+    }
+
+    setUpdatingDocId(editTargetDoc.id);
+    try {
+      await ApiClient.replaceDocument(selectedRepo.id, editTargetDoc.id, file);
+      await fetchDocs(selectedRepo.id);
+      await fetchRepos();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Không thể cập nhật file");
+    } finally {
+      setUpdatingDocId(null);
+      setEditTargetDoc(null);
+    }
   };
 
   const openRenameRepoModal = (repo: Repository) => {
@@ -386,6 +557,38 @@ export function RepositoryManager() {
     }
   };
 
+  const handleConvertDoc = async (docId: string) => {
+    if (!selectedRepo || processingDocId) return;
+    setProcessingDocId(docId);
+    try {
+      await ApiClient.convertDocument(selectedRepo.id, docId);
+      await fetchDocs(selectedRepo.id);
+      await fetchRepos();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Lỗi OCR/chuyển đổi tài liệu");
+    } finally {
+      setProcessingDocId(null);
+    }
+  };
+
+  const handleDownloadMarkdown = async (doc: Document) => {
+    if (!selectedRepo) return;
+    try {
+      const blob = await ApiClient.downloadDocumentMarkdown(selectedRepo.id, doc.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stem = doc.filename.replace(/\.[^/.]+$/, "") || "document";
+      link.href = url;
+      link.download = `${stem}.md`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Chưa tải được file Markdown");
+    }
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -517,6 +720,14 @@ export function RepositoryManager() {
       animate={{ opacity: 1, y: 0 }}
       className="max-w-7xl mx-auto space-y-6"
     >
+      <input
+        ref={editFileInputRef}
+        type="file"
+        accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        className="hidden"
+        onChange={handleReplaceDoc}
+      />
+
       <header className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
@@ -854,7 +1065,7 @@ export function RepositoryManager() {
                         className="py-3 flex items-center justify-between hover:bg-slate-50 transition-colors group gap-4"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <File size={16} className="text-blue-500 shrink-0" />
+                          <FileIcon size={16} className="text-blue-500 shrink-0" />
                           <div className="min-w-0">
                             <p className="font-medium text-slate-800 text-sm truncate">
                               {doc.filename}
@@ -873,15 +1084,106 @@ export function RepositoryManager() {
                             </p>
                           </div>
                         </div>
-                        {!selectedRepo.is_shared && (
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
-                            onClick={() => handleDeleteDoc(doc.id)}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shrink-0"
-                            title="Xóa tài liệu"
+                            type="button"
+                            onClick={() => handleViewDoc(doc)}
+                            disabled={viewingDocId === doc.id}
+                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-wait"
+                            title="Xem file"
+                            aria-label={`Xem file ${doc.filename}`}
                           >
-                            <Trash2 size={14} />
+                            {viewingDocId === doc.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Eye size={14} />
+                            )}
                           </button>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadDoc(doc)}
+                            disabled={downloadingDocId === doc.id}
+                            className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-wait"
+                            title="Tải xuống"
+                            aria-label={`Tải xuống ${doc.filename}`}
+                          >
+                            {downloadingDocId === doc.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Download size={14} />
+                            )}
+                          </button>
+                          {doc.processing_status === "completed" && (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadMarkdown(doc)}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                              title="Tải Markdown"
+                              aria-label={`Tải Markdown ${doc.filename}`}
+                            >
+                              <Download size={14} />
+                            </button>
+                          )}
+                          {!selectedRepo.is_shared && (
+                            <button
+                              type="button"
+                              onClick={() => handleConvertDoc(doc.id)}
+                              disabled={processingDocId === doc.id}
+                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-wait"
+                              title="OCR lại"
+                              aria-label={`OCR lại ${doc.filename}`}
+                            >
+                              {processingDocId === doc.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <RefreshCw size={14} />
+                              )}
+                            </button>
+                          )}
+                          {!selectedRepo.is_shared && isDocxDocument(doc.filename) && (
+                            <button
+                              type="button"
+                              onClick={() => openDocxEditor(doc)}
+                              disabled={loadingDocxEditorId === doc.id}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-wait"
+                              title="Soạn thảo DOCX"
+                              aria-label={`Soạn thảo DOCX ${doc.filename}`}
+                            >
+                              {loadingDocxEditorId === doc.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <Pencil size={14} />
+                              )}
+                            </button>
+                          )}
+                          {!selectedRepo.is_shared && isWordDocument(doc.filename) && (
+                            <button
+                              type="button"
+                              onClick={() => openReplaceDocPicker(doc)}
+                              disabled={updatingDocId === doc.id}
+                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 disabled:opacity-60 disabled:cursor-wait"
+                              title="Thay thế file Word"
+                              aria-label={`Thay thế file Word ${doc.filename}`}
+                            >
+                              {updatingDocId === doc.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <UploadCloud size={14} />
+                              )}
+                            </button>
+                          )}
+                          {!selectedRepo.is_shared && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDoc(doc.id)}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                              title="Xóa tài liệu"
+                              aria-label={`Xóa tài liệu ${doc.filename}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -899,6 +1201,110 @@ export function RepositoryManager() {
           )}
         </section>
       </div>
+
+      {/* DOCX Editor Modal */}
+      <AnimatePresence>
+        {docxEditorDoc && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm p-2 sm:p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.98, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.98, opacity: 0, y: 10 }}
+              className="h-full min-h-0 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+            >
+              <div className="h-16 px-4 sm:px-5 border-b border-slate-200 flex items-center justify-between gap-3 bg-white shrink-0">
+                <div className="min-w-0">
+                  <h2 className="font-bold text-slate-900 truncate">
+                    {docxEditorDoc.filename}
+                  </h2>
+                  <p className="text-xs text-slate-500 truncate">
+                    {docxEditorDirty
+                      ? "Có thay đổi chưa lưu"
+                      : "Đang soạn thảo DOCX"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={saveDocxEditor}
+                    disabled={
+                      isDocxEditorSaving ||
+                      !docxEditorBuffer ||
+                      Boolean(docxEditorError)
+                    }
+                    className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    title="Lưu DOCX"
+                  >
+                    {isDocxEditorSaving ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Save size={16} />
+                    )}
+                    <span className="hidden sm:inline">
+                      {isDocxEditorSaving ? "Đang lưu" : "Lưu"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeDocxEditor}
+                    disabled={isDocxEditorSaving}
+                    className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                    title="Đóng"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {docxEditorError ? (
+                <div className="flex-1 min-h-0 flex items-center justify-center p-6 bg-slate-50">
+                  <div className="max-w-md rounded-xl border border-rose-200 bg-white p-5 text-center shadow-sm">
+                    <p className="font-semibold text-rose-700">
+                      Không thể mở trình soạn thảo
+                    </p>
+                    <p className="text-sm text-slate-500 mt-2">
+                      {docxEditorError}
+                    </p>
+                  </div>
+                </div>
+              ) : !docxEditorBuffer ? (
+                <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 bg-slate-50 text-slate-500">
+                  <Loader2 size={26} className="animate-spin text-blue-600" />
+                  <p className="text-sm font-medium">Đang tải file DOCX...</p>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-hidden bg-slate-100">
+                  <DocxEditor
+                    ref={docxEditorRef}
+                    documentBuffer={docxEditorBuffer}
+                    documentName={docxEditorDoc.filename}
+                    documentNameEditable={false}
+                    author={getStoredUser()?.full_name || "User"}
+                    mode="editing"
+                    showFileOpen={false}
+                    showRuler
+                    rulerUnit="cm"
+                    initialZoom={0.9}
+                    className="h-full"
+                    onChange={() => setDocxEditorDirty(true)}
+                    onSave={(buffer) => void saveDocxEditorBuffer(buffer)}
+                    onError={(err) =>
+                      setDocxEditorError(
+                        err.message || "Trình soạn thảo DOCX gặp lỗi"
+                      )
+                    }
+                  />
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Rename Modal */}
       <AnimatePresence>

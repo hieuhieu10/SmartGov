@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -13,6 +15,22 @@ from app import database as db
 
 class AIServiceError(RuntimeError):
     pass
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    return value
 
 
 class AIClient:
@@ -39,7 +57,7 @@ class AIClient:
             "repo_id": repo_id,
             "user_id": user_id,
             "engine": engine,
-            "input_data": input_data or {},
+            "input_data": _json_safe(input_data or {}),
         }
         headers = {"X-AI-Internal-Token": settings.ai_internal_token}
         try:
@@ -114,8 +132,44 @@ class AIClient:
             "/internal/documents/convert", input_data={"stored_path": file_path}
         )
         markdown = data.get("markdown_content", "")
+        chunk_count = int(data.get("chunk_count") or 0)
+        chunks = data.get("chunks")
         await db.update_document_markdown(doc_id, markdown)
+        await db.update_document_processing(doc_id, chunk_count=chunk_count)
+        if isinstance(chunks, list):
+            await db.replace_document_chunks(doc_id, chunks)
         return markdown
+
+    async def embed_texts(self, texts: list[str], input_type: str = "document") -> list[list[float]]:
+        data = await self.request(
+            "/internal/embeddings/create",
+            input_data={"texts": texts, "input_type": input_type},
+            kind="long",
+        )
+        embeddings = data.get("embeddings") or []
+        return embeddings if isinstance(embeddings, list) else []
+
+    async def chunk_embed_and_store(self, doc_id: str, markdown: str, filename: str) -> int:
+        data = await self.request(
+            "/internal/documents/chunk-embed",
+            input_data={"markdown_content": markdown, "filename": filename},
+            kind="long",
+        )
+        chunk_count = int(data.get("chunk_count") or 0)
+        chunks = data.get("chunks")
+        await db.update_document_processing(doc_id, chunk_count=chunk_count)
+        if isinstance(chunks, list):
+            await db.replace_document_chunks(doc_id, chunks)
+            return len(chunks)
+        return 0
+
+    async def rag_answer(self, question: str, contexts: list[dict], history: list[dict]) -> str:
+        data = await self.request(
+            "/internal/rag/answer",
+            input_data={"question": question, "contexts": contexts, "history": history},
+            kind="chat",
+        )
+        return str(data.get("answer") or "")
 
 
 ai_client = AIClient()
