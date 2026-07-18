@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: officeai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-officeai}
+      POSTGRES_USER: ${POSTGRES_USER:-officeai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - officeai-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-officeai} -d ${POSTGRES_DB:-officeai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ai:
+    build: ./AI
+    container_name: officeai-ai
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Dùng cấu hình LLM từ .env gốc của dự án trong môi trường Docker.
+    environment:
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?AI_INTERNAL_TOKEN is required}
+      AI_ENGINE: self_hosted
+      # Agent Researcher gọi ngược về BE để dùng chung hybrid search (pgvector
+      # + FTS) với Chat RAG, xác thực bằng chính AI_INTERNAL_TOKEN ở trên.
+      BE_SERVICE_URL: http://be:6868
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      VLLM_MODEL_NAME: ${VLLM_MODEL_NAME:-your-model}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      VLLM_USER_AGENT: ${VLLM_USER_AGENT:-OfficeAI/1.0}
+      VLLM_FALLBACK_BASE_URL: ${VLLM_FALLBACK_BASE_URL:-}
+      VLLM_FALLBACK_MODEL_NAME: ${VLLM_FALLBACK_MODEL_NAME:-}
+      VLLM_FALLBACK_API_KEY: ${VLLM_FALLBACK_API_KEY:-}
+    env_file:
+      - path: ./AI/.env
+        required: false
+    volumes:
+      - officeai-uploads:/app/uploads
+      - officeai-outputs:/app/outputs
+      - officeai-repofiles:/app/repo_files
+      - officeai-templates:/app/user_templates
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  be:
+    build: ./BE
+    container_name: officeai-be
+    restart: unless-stopped
+    ports:
+      - "6868:6868"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-officeai}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-officeai}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-System Administrator}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      AI_SERVICE_URL: http://ai:7000
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
+      RAG_TOP_K: ${RAG_TOP_K:-8}
+      RAG_VECTOR_CANDIDATES: ${RAG_VECTOR_CANDIDATES:-30}
+      RAG_TEXT_CANDIDATES: ${RAG_TEXT_CANDIDATES:-30}
+      RAG_VECTOR_WEIGHT: ${RAG_VECTOR_WEIGHT:-0.6}
+      RAG_TEXT_WEIGHT: ${RAG_TEXT_WEIGHT:-1.4}
+    env_file:
+      - path: ./BE/.env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+    volumes:
+      - officeai-uploads:/app/uploads
+      - officeai-outputs:/app/outputs
+      - officeai-repofiles:/app/repo_files
+      - officeai-templates:/app/user_templates
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6868/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  fe:
+    build: ./FE
+    container_name: officeai-fe
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      be:
+        condition: service_healthy
+
+volumes:
+  officeai-postgres:
+  officeai-uploads:
+  officeai-outputs:
+  officeai-repofiles:
+  officeai-templates:

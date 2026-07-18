@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "mo_ta_mau": "Mẫu Bảng tổng hợp ý kiến, tiếp thu, giải trình ý kiến góp ý dự thảo văn bản QPPL. Trích xuất từ tài liệu thật của Sở KH&CN Tây Ninh (dự thảo Quyết định + Quy chế Hệ thống 1022).",
+  "loai_van_ban": "Bảng tổng hợp ý kiến, tiếp thu, giải trình ý kiến góp ý",
+  "metadata": {
+    "co_quan_chu_quan": "UBND TỈNH TÂY NINH",
+    "co_quan_ban_hanh": "SỞ KHOA HỌC VÀ CÔNG NGHỆ",
+    "dia_danh": "Tây Ninh",
+    "ngay_ban_hanh": "ngày ... tháng 12 năm 2025",
+    "ten_du_thao": "Quyết định ban hành Quy chế Quản lý, vận hành và sử dụng Hệ thống 1022 trong tiếp nhận, xử lý và trả lời kiến nghị, phản ánh hiện trường trên địa bàn tỉnh Tây Ninh"
+  },
+  "can_cu": "Căn cứ Luật Ban hành văn bản quy phạm pháp luật, cơ quan chủ trì soạn thảo đã tổ chức lấy ý kiến đối với dự thảo Quyết định. Kết quả:",
+  "thong_ke": {
+    "tong_so_don_vi_xin_y_kien": 121,
+    "tong_so_gop_y_bang_van_ban": 40,
+    "so_don_vi_dong_gop_y_kien": 7,
+    "don_vi_thong_nhat": {
+      "so_ban_nganh_tinh": {
+        "ty_le": "07/09",
+        "danh_sach": [
+          {"ten": "Sở Giáo dục và Đào tạo", "so_cong_van": "2711/SGDĐT-VP", "ngay": "07/11/2025"},
+          {"ten": "Sở Dân tộc và Tôn giáo", "so_cong_van": "860/SDTTG-VP", "ngay": "10/11/2025"},
+          {"ten": "Ban Quản lý Khu Kinh tế", "so_cong_van": "1911/-BQLKKT-VP", "ngay": "12/11/2025"},
+          {"ten": "Văn phòng UBND", "so_cong_van": "1198/VP-TTHCC", "ngay": "12/11/2025"},
+          {"ten": "Sở Xây dựng", "so_cong_van": "4546/SXD-KHTH", "ngay": "13/11/2025"},
+          {"ten": "Sở Tài chính", "so_cong_van": "7001/STC-VP", "ngay": "14/11/2025"},
+          {"ten": "Sở Nông nghiệp và Môi trường", "so_cong_van": "9577/SNNMT-VP", "ngay": "19/11/2025"}
+        ]
+      },
+      "ubnd_cap_xa": {
+        "ty_le": "26/31",
+        "danh_sach": [
+          {"ten": "Phường Long An", "so_cong_van": "3067/UBND-NC", "ngay": "10/11/2025"},
+          {"ten": "Xã Tân Hòa", "so_cong_van": "864/UBND", "ngay": "10/11/2025"},
+          {"ten": "Phường Gia Lộc", "so_cong_van": "733/UBND-VHXH", "ngay": "11/11/2025"},
+          {"ten": "Xã Vĩnh Thạnh", "so_cong_van": "903/UBND-VX", "ngay": "10/11/2025"},
+          {"ten": "Phường Hòa Thành", "so_cong_van": "567/UBND", "ngay": "11/11/2025"}
+        ],
+        "ghi_chu": "Danh sách rút gọn — tài liệu gốc liệt kê đủ 26 đơn vị."
+      },
+      "don_vi_khong_gop_y": "Đơn vị không gửi văn bản góp ý xem như thống nhất nội dung dự thảo."
+    }
+  },
+  "cot_bang": [
+    {"khoa": "nhom_van_de", "tieu_de": "NHÓM VẤN ĐỀ, ĐIỀU, KHOẢN"},
+    {"khoa": "chu_the_gop_y", "tieu_de": "CHỦ THỂ GÓP Ý"},
+    {"khoa": "noi_dung_gop_y", "tieu_de": "NỘI DUNG GÓP Ý"},
+    {"khoa": "noi_dung_tiep_thu_giai_trinh", "tieu_de": "NỘI DUNG TIẾP THU, GIẢI TRÌNH"}
+  ],
+  "loai_phan_hoi_cho_phep": [
+    "Tiếp thu điều chỉnh",
+    "Tiếp thu, bổ sung vào dự thảo",
+    "Tiếp thu, thực hiện bổ sung",
+    "Tiếp thu (thực hiện khi đủ điều kiện)",
+    "Đề xuất giữ nguyên theo dự thảo (kèm Lý do giải trình)"
+  ],
+  "sections": [
+    {
+      "tieu_de": "1. Đối với dự thảo Quyết định",
+      "rows": [
+        {
+          "nhom_van_de": "Bố cục trình bày dự thảo",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Đề nghị trình bày, bố cục dự thảo đúng theo mẫu Quyết định số 20 Phụ lục III ban hành kèm theo Nghị định số 187/2025/NĐ-CP ngày 01/7/2025 của Chính phủ (sửa đổi, bổ sung Nghị định số 78/2025/NĐ-CP) và Nghị định số 79/2025/NĐ-CP về kiểm tra, rà soát, hệ thống hóa và xử lý văn bản QPPL.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Bố cục trình bày dự thảo",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Phần căn cứ ban hành Quyết định, đề nghị trình bày đúng theo mẫu nêu trên và Điều 62 Nghị định số 78/2025/NĐ-CP.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Nội dung dự thảo",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Đề nghị kịp thời cập nhật Luật sửa đổi, bổ sung một số điều của Luật Tiếp Công dân, Luật Khiếu nại, Luật Tố cáo theo định hướng Quốc hội thông qua tại kỳ họp thứ 10.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu, khi các Luật này được ban hành Sở KHCN sẽ tham mưu cập nhật."
+        },
+        {
+          "nhom_van_de": "Tại Điều 2 dự thảo",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Đề nghị viện dẫn chính xác ngày tháng năm ban hành và tên của các Quyết định sẽ được thay thế, vì dự thảo trình bày chưa chính xác.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Phần nơi nhận",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Đề nghị rà soát trình bày đơn vị nhận văn bản đúng theo điểm b khoản 8 mục II Phụ lục I Nghị định số 187/2025/NĐ-CP; sửa \"Cục Kiểm tra VBQPPL - Bộ Tư pháp (b/c); Trung tâm Công báo - Tin học;\" thành \"Cục Kiểm tra văn bản và Quản lý xử lý vi phạm hành chính - Bộ Tư pháp; Trung tâm Công báo - Tin học (Văn phòng UBND tỉnh);\".",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        }
+      ]
+    },
+    {
+      "tieu_de": "2. Đối với dự thảo Quy chế",
+      "rows": [
+        {
+          "nhom_van_de": "Báo cáo tổng kết thi hành pháp luật; bản so sánh, thuyết minh nội dung dự thảo",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Đề nghị xây dựng báo cáo tổng kết việc thi hành pháp luật hoặc đánh giá thực trạng quan hệ xã hội liên quan; bản so sánh, thuyết minh nội dung dự thảo và các biểu mẫu theo Phụ lục IV Nghị định số 187/2025/NĐ-CP và khoản 3 Điều 49 Nghị định số 78/2025/NĐ-CP.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu, thực hiện bổ sung"
+        },
+        {
+          "nhom_van_de": "Tại khoản 2 Điều 1",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Đề nghị sửa điểm a để thống nhất cấu trúc câu với điểm b khoản 2; rà soát, bổ sung đối tượng áp dụng \"Đơn vị điều phối\" vào khoản 2.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Tại khoản 4",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Đề nghị rà soát sự đồng bộ giữa giải thích từ ngữ \"Đơn vị xử lý\" tại khoản 4 và đối tượng áp dụng tại điểm a khoản 2 Điều 1.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Tại khoản 2 Điều 4",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Viện dẫn \"điểm a, b, c, d, đ khoản 1 Điều này\" là chưa chính xác vì khoản 1 Điều 4 dự thảo không có điểm đ.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Nội dung dự thảo",
+          "chu_the_gop_y": "Sở Tư pháp",
+          "noi_dung_gop_y": "Các từ ngữ chưa thống nhất (\"phản ánh, kiến nghị\" / \"kiến nghị, phản ánh\", \"đơn vị xử lý\" / \"đơn vị tiếp nhận xử lý\"). Đề nghị rà soát, chỉnh sửa thống nhất trong toàn dự thảo.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Tại khoản 3 Điều 8",
+          "chu_the_gop_y": "Sở Văn hóa, Thể thao và Du lịch tỉnh Tây Ninh",
+          "noi_dung_gop_y": "Đề nghị nêu cụ thể thời gian đơn vị điều phối trả lại câu trả lời cho cơ quan xử lý khi kết quả chưa đảm bảo yêu cầu. Lý do: tránh trễ hạn, đùn đẩy trách nhiệm.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu, bổ sung vào dự thảo"
+        },
+        {
+          "nhom_van_de": "Tại khoản 6 Điều 5",
+          "chu_the_gop_y": "Sở Văn hóa, Thể thao và Du lịch tỉnh Tây Ninh",
+          "noi_dung_gop_y": "Đề nghị bổ sung lĩnh vực phản ánh \"tinh thần thái độ, trách nhiệm thực hiện nhiệm vụ, công vụ của cán bộ, công chức, viên chức các cơ quan, đơn vị trên địa bàn tỉnh\".",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu, bổ sung vào dự thảo"
+        },
+        {
+          "nhom_van_de": "Tại khoản 4 Điều 5",
+          "chu_the_gop_y": "Xã Bình Thành",
+          "noi_dung_gop_y": "Đề nghị sửa thành \"Cung cấp đầy đủ thông tin về tên, số điện thoại, địa chỉ, thư điện tử (nếu có)...\". Lý do: không phải người dân nào cũng có thư điện tử.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Tại khoản 1 Điều 6",
+          "chu_the_gop_y": "Xã Bình Thành",
+          "noi_dung_gop_y": "Đề nghị sửa thành \"Kiến nghị, phản ánh không thuộc các lĩnh vực tiếp nhận được quy định tại khoản 6 Điều 5 Quy chế này\" (dự thảo viện dẫn khoản 6 Điều 6 là không phù hợp).",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Tại khoản 2 Điều 6",
+          "chu_the_gop_y": "Xã Bình Thành",
+          "noi_dung_gop_y": "Đề nghị sửa thành \"Kiến nghị, phản ánh không cung cấp đầy đủ thông tin theo quy định tại khoản 1, 2, 4 Điều 5 Quy chế này\".",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Điều 1 & 2",
+          "chu_the_gop_y": "Xã Truông Mít",
+          "noi_dung_gop_y": "Có thể thêm một khoản về nguyên tắc bảo vệ dữ liệu cá nhân và bảo mật thông tin ngay từ Chương I để nhấn mạnh tầm quan trọng.",
+          "noi_dung_tiep_thu_giai_trinh": "Đề xuất giữ nguyên theo dự thảo. Lý do: Các quy định về bảo mật thông tin đã được lồng ghép tại quy trình xử lý và công khai kết quả (Điều 9); bảo vệ dữ liệu cá nhân là nghĩa vụ bắt buộc theo Nghị định số 13/2023/NĐ-CP và Luật An toàn thông tin mạng."
+        },
+        {
+          "nhom_van_de": "Điều 4",
+          "chu_the_gop_y": "Xã Truông Mít",
+          "noi_dung_gop_y": "Tổng đài 1022 chỉ hướng dẫn, không ghi nhận trực tiếp; cần nhấn mạnh \"Không được tự ý giải quyết kiến nghị qua điện thoại để tránh trùng lặp hoặc sai thẩm quyền\".",
+          "noi_dung_tiep_thu_giai_trinh": "Đề xuất giữ nguyên theo dự thảo. Lý do: Đã quy định tại điểm c khoản 1 Điều 4 — Tổng đài 1022 (0276.1022) chỉ tương tác, hướng dẫn; không tiếp nhận hay giải quyết vụ việc."
+        },
+        {
+          "nhom_van_de": "Điều 9",
+          "chu_the_gop_y": "Xã Truông Mít",
+          "noi_dung_gop_y": "Công khai kết quả: nên nhấn mạnh thông tin cá nhân được bảo mật tuyệt đối khi có yêu cầu.",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Điều 7",
+          "chu_the_gop_y": "Xã Tân Phú",
+          "noi_dung_gop_y": "Khoản 1 bổ sung chữ \"phối\" sau chữ \"điều\"; khoản 4 bổ sung chữ \"Sở\" trước cụm \"Khoa học và Công nghệ\".",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu và điều chỉnh"
+        },
+        {
+          "nhom_van_de": "Khoản 2 Điều 4",
+          "chu_the_gop_y": "Phường Trảng Bàng",
+          "noi_dung_gop_y": "Đề nghị bỏ điểm \"đ\" khoản 2 Điều 4 Chương II. Lý do: khoản 1 Điều 4 chỉ có điểm a, b, c, d, không có điểm \"đ\".",
+          "noi_dung_tiep_thu_giai_trinh": "Tiếp thu và điều chỉnh"
+        }
+      ]
+    }
+  ]
+}
