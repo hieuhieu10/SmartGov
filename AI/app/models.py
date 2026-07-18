@@ -39,9 +39,9 @@ class HealthResponse(BaseModel):
     """Health check response."""
     model_config = {"populate_by_name": True}
     status: str = "ok"
-    service: str = "STTNB - Speech To Text Notebook"
+    service: str = "SmartGov AI"
     version: str = "2.0.0"
-    notebooklm_auth: str = Field(default="unknown", serialization_alias="ai_service")
+    ai_service: str = "internal"
 
 
 # ─── Auth Schemas ────────────────────────────────────────────────────

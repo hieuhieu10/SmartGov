@@ -11,7 +11,7 @@ FE (React/Nginx) -> BE (FastAPI public) -> PostgreSQL 16
 - `FE/` chỉ gọi `/api` trên BE.
 - `BE/` sở hữu auth, RBAC, PostgreSQL, repository/document/task/history,
   upload/download, SSE và Word export.
-- `AI/` sở hữu NotebookLM, vLLM, MarkItDown, document scanner, drafting
+- `AI/` sở hữu vLLM, MarkItDown, document scanner, drafting
   agents và template/audio AI. AI không import database hoặc auth của BE.
 - BE gọi AI bằng HTTP với `AI_SERVICE_URL` và `X-AI-Internal-Token`.
 
@@ -34,7 +34,7 @@ docker compose logs -f be ai
 - FE: `http://localhost:3000`
 - BE: `http://localhost:6868`
 - AI chỉ nằm trong Docker network tại `ai:7000`.
-- Shared volumes: uploads, outputs, repo files, templates và NotebookLM session.
+- Shared volumes: uploads, outputs, repo files và templates.
 
 ## Rules
 

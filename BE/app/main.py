@@ -31,7 +31,7 @@ logger = logging.getLogger("sttnb")
 
 # ─── FastAPI App ──────────────────────────────────────────────────────
 app = FastAPI(
-    title="STTNB — Speech To Text NoteBook",
+    title="SmartGov Backend",
     description=(
         "API đa chức năng: Kho dữ liệu + AI, Chat Q&A streaming, "
         "Auth/RBAC và quản trị hệ thống"
@@ -67,9 +67,9 @@ async def health_check():
     """Public liveness endpoint."""
     return HealthResponse(
         status="ok",
-        service="STTNB - Speech To Text NoteBook",
+        service="SmartGov AI",
         version="2.0.0",
-        notebooklm_auth="ok",
+        ai_service="internal",
     )
 
 
@@ -79,7 +79,7 @@ async def health_check():
 async def startup():
     """Initialize on server startup."""
     logger.info("=" * 60)
-    logger.info("  STTNB — Speech To Text NoteBook v2.0")
+    logger.info("  SmartGov AI v2.0")
     logger.info("  Kho dữ liệu | Chat | Quản trị")
     logger.info("=" * 60)
     logger.info(f"  Upload dir:    {settings.upload_dir}")
