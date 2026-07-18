@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.models import DocumentType
 from app.services.document_converter import document_converter
+from app.services.embedding_service import embedding_service
 from app.services.document_scanner import (
     document_scanner,
     reset_request_documents,
@@ -22,6 +23,7 @@ from app.services.document_scanner import (
 from app.services.drafting_service import drafting_service
 from app.services.llm_service import llm_service
 from app.services.notebooklm_service import notebooklm_service
+from app.services.rag_service import rag_service
 from app.services.summary_service import summary_service
 from app.services.template_service import template_service
 
@@ -95,8 +97,44 @@ async def health() -> dict:
 @app.post("/internal/documents/convert", dependencies=[Depends(require_internal_token)])
 async def convert_document(payload: Envelope) -> dict:
     path = payload.input_data["stored_path"]
-    markdown = await asyncio.to_thread(document_converter.convert_to_markdown, path)
-    return ok({"markdown_content": markdown})
+    result = await asyncio.to_thread(document_converter.convert_document, path)
+    return ok(result)
+
+
+@app.post("/internal/documents/chunk-embed", dependencies=[Depends(require_internal_token)])
+async def chunk_embed_document(payload: Envelope) -> dict:
+    data = payload.input_data
+    result = await asyncio.to_thread(
+        document_converter.chunk_and_embed_markdown,
+        str(data.get("markdown_content") or ""),
+        str(data.get("filename") or ""),
+    )
+    return ok(result)
+
+
+@app.post("/internal/embeddings/create", dependencies=[Depends(require_internal_token)])
+async def create_embeddings(payload: Envelope) -> dict:
+    texts = [str(item) for item in (payload.input_data.get("texts") or [])]
+    input_type = str(payload.input_data.get("input_type") or "document")
+    embeddings = await asyncio.to_thread(embedding_service.embed_texts, texts, input_type)
+    return ok(
+        {
+            "model": embedding_service.model_name if embeddings else "",
+            "dimensions": len(embeddings[0]) if embeddings else 0,
+            "embeddings": embeddings,
+        }
+    )
+
+
+@app.post("/internal/rag/answer", dependencies=[Depends(require_internal_token)])
+async def answer_with_rag(payload: Envelope) -> dict:
+    data = payload.input_data
+    answer = await rag_service.answer(
+        question=str(data.get("question") or ""),
+        contexts=data.get("contexts") or [],
+        history=data.get("history") or [],
+    )
+    return ok({"answer": answer})
 
 
 @app.post("/internal/chat/self-hosted", dependencies=[Depends(require_internal_token)])

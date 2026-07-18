@@ -19,6 +19,8 @@ from openai import OpenAI
 from markitdown import MarkItDown
 
 from app.config import settings
+from app.services.embedding_service import embedding_service
+from app.services.markdown_chunking import build_chunk_records, structure_ocr_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,12 @@ class DocumentConverter:
         )
 
     def convert_to_markdown(self, file_path: str) -> str:
+        return self.convert_document(file_path)["markdown_content"]
+
+    def chunk_and_embed_markdown(self, markdown: str, filename: str = "") -> dict[str, object]:
+        return self._finalize_markdown(markdown, filename or "document.md")
+
+    def convert_document(self, file_path: str) -> dict[str, object]:
         """
         Convert a document file to Markdown text.
 
@@ -71,7 +79,7 @@ class DocumentConverter:
             file_path: Path to the source document.
 
         Returns:
-            Markdown text content.
+            Dict with normalized markdown text and chunk count.
         """
         logger.info(f"Converting to Markdown: {file_path}")
 
@@ -84,7 +92,7 @@ class DocumentConverter:
                     len(markdown),
                     file_path,
                 )
-                return markdown
+                return self._finalize_markdown(markdown, file_path)
             logger.warning("MarkItDown returned empty Markdown for %s", file_path)
         except Exception as exc:
             markitdown_error = exc
@@ -98,7 +106,7 @@ class DocumentConverter:
                     len(markdown),
                     file_path,
                 )
-                return markdown
+                return self._finalize_markdown(markdown, file_path)
         except Exception as exc:
             logger.error("PaddleOCR fallback failed for %s: %s", file_path, exc)
 
@@ -109,11 +117,48 @@ class DocumentConverter:
                 len(plain_text),
                 file_path,
             )
-            return plain_text
+            return self._finalize_markdown(plain_text, file_path)
 
         if markitdown_error:
             raise ValueError(f"Cannot convert file to text: {file_path}") from markitdown_error
         raise ValueError(f"Cannot convert file to text: {file_path}")
+
+    def _finalize_markdown(self, markdown: str, file_path: str) -> dict[str, object]:
+        structured_markdown = structure_ocr_markdown(markdown)
+        chunk_records = build_chunk_records(
+            structured_markdown,
+            settings.embedding_chunk_size,
+            filename=Path(file_path).name,
+        )
+        embeddings = embedding_service.embed_texts(
+            [chunk["chunk_text"] for chunk in chunk_records],
+            input_type="document",
+        )
+        embedded_chunks: list[dict] | None = None
+        if embeddings and len(embeddings) == len(chunk_records):
+            embedded_chunks = []
+            for chunk, vector in zip(chunk_records, embeddings):
+                embedded_chunks.append(
+                    {
+                        **chunk,
+                        "embedding_model": embedding_service.model_name,
+                        "embedding": vector,
+                    }
+                )
+        elif embeddings:
+            logger.warning(
+                "Embedding count mismatch for %s: chunks=%s embeddings=%s",
+                file_path,
+                len(chunk_records),
+                len(embeddings),
+            )
+
+        return {
+            "markdown_content": structured_markdown,
+            "chunk_count": len(chunk_records),
+            "embedding_model_name": embedding_service.model_name if embedded_chunks else "",
+            "chunks": embedded_chunks,
+        }
 
     def _convert_with_markitdown(self, file_path: str) -> str:
         result = self._markitdown.convert(file_path)

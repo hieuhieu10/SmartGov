@@ -51,12 +51,12 @@ class LLMService:
 
     def _get_fallback_client(self) -> Optional[AsyncOpenAI]:
         """Lazy-init the AsyncOpenAI client dự phòng, nếu có cấu hình."""
-        if not settings.vllm_fallback_base_url:
+        if not (settings.vllm_fallback_base_url and settings.vllm_fallback_model_name):
             return None
         if self._fallback_client is None:
             self._fallback_client = AsyncOpenAI(
                 base_url=settings.vllm_fallback_base_url,
-                api_key=settings.vllm_fallback_api_key,
+                api_key=settings.vllm_fallback_api_key or settings.vllm_api_key,
                 timeout=settings.vllm_fallback_timeout,
             )
             logger.info(

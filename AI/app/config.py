@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     ocr_vllm_base_url: str = "http://host.docker.internal:8686/v1"
     ocr_vllm_model_name: str = "your-vision-model"
     ocr_vllm_api_key: str = ""
+    embedding_base_url: str = ""
+    embedding_model_name: str = "intfloat/multilingual-e5-small"
+    embedding_api_key: str = ""
+    embedding_dimensions: int = 384
+    embedding_batch_size: int = 16
+    embedding_chunk_size: int = 1200
+    embedding_device: str = "cpu"
     ocr_service_url: str = "http://ocr:7100"
     doc_chunk_size: int = 80000
     scanner_max_tokens: int = 8192

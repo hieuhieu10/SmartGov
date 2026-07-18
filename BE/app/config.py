@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # Internal AI service
     ai_service_url: str = "http://ai:7000"
     ai_internal_token: str = ""
+    embedding_dimensions: int = 384
+    rag_top_k: int = 8
+    rag_vector_candidates: int = 30
+    rag_text_candidates: int = 30
 
     # JWT Authentication
     jwt_secret: str = "change-me-in-production-sttnb-2026"
