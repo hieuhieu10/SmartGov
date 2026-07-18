@@ -26,7 +26,7 @@ services:
     # trong AI/.env bị thay bằng default. Cấu hình model đặt trong AI/.env.
     environment:
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?AI_INTERNAL_TOKEN is required}
-      AI_ENGINE: ${AI_ENGINE:-notebooklm}
+      AI_ENGINE: ${AI_ENGINE:-self_hosted}
       # Agent Researcher gọi ngược về BE để dùng chung hybrid search (pgvector
       # + FTS) với Chat RAG, xác thực bằng chính AI_INTERNAL_TOKEN ở trên.
       BE_SERVICE_URL: http://be:6868
@@ -38,9 +38,6 @@ services:
       - officeai-outputs:/app/outputs
       - officeai-repofiles:/app/repo_files
       - officeai-templates:/app/user_templates
-      - type: bind
-        source: ${NOTEBOOKLM_HOME:?NOTEBOOKLM_HOME is required}
-        target: /root/.notebooklm
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7000/health"]
       interval: 15s

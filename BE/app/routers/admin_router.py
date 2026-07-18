@@ -168,7 +168,7 @@ async def delete_dept(dept_id: str, admin: dict = Depends(require_org_admin)):
 @router.post("/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(req: AdminUserCreate, admin: dict = Depends(require_org_admin)):
     """Tạo tài khoản người dùng (admin đơn vị hoặc hệ thống)."""
-    # org_admin can only create users within their org and always uses Server 1.
+    # org_admin can only create users within their org and uses the default self-hosted engine.
     effective_ai_engine = req.ai_engine
     if admin.get("role") == "org_admin":
         if req.org_id and req.org_id != admin.get("org_id"):
@@ -177,7 +177,7 @@ async def create_user(req: AdminUserCreate, admin: dict = Depends(require_org_ad
             req.org_id = admin.get("org_id")
         if req.role == "system_admin":
             raise HTTPException(status_code=403, detail="Không có quyền tạo admin hệ thống")
-        effective_ai_engine = "notebooklm"
+        effective_ai_engine = "self_hosted"
 
     # Check username uniqueness
     existing = await db.get_user_by_username(req.username)

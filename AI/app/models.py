@@ -161,8 +161,8 @@ class AdminUserCreate(BaseModel):
     dept_id: Optional[str] = None
     ai_engine: Optional[str] = Field(
         None,
-        pattern="^(notebooklm|self_hosted)$",
-        description="Máy chủ xử lý cho user: Server 1, Server 2, hoặc null (dùng mặc định hệ thống)",
+        pattern="^(self_hosted)$",
+        description="Máy chủ xử lý cho user: self_hosted hoặc null (dùng mặc định hệ thống)",
     )
 
 
@@ -175,8 +175,8 @@ class AdminUserUpdate(BaseModel):
     dept_id: Optional[str] = None
     ai_engine: Optional[str] = Field(
         None,
-        pattern="^(notebooklm|self_hosted|)$",
-        description="Máy chủ xử lý: Server 1, Server 2. Gửi giá trị rỗng '' để reset về mặc định hệ thống.",
+        pattern="^(self_hosted|)$",
+        description="Máy chủ xử lý: self_hosted. Gửi giá trị rỗng '' để reset về mặc định hệ thống.",
     )
 
 

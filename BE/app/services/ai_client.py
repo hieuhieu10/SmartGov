@@ -65,7 +65,7 @@ class AIClient:
         *,
         repo_id: str = "",
         user_id: str = "",
-        engine: str = "notebooklm",
+        engine: str = "self_hosted",
         input_data: dict | None = None,
         kind: str = "long",
     ) -> Any:

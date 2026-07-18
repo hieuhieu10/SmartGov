@@ -56,7 +56,7 @@ class DraftingService:
     ) -> dict:
         engine = "self_hosted" if (
             is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
-        ) else "notebooklm"
+        ) else "self_hosted"
         selected = selected_document_ids or []
         data = await ai_client.request(
             "/internal/draft/generate",
@@ -84,7 +84,7 @@ class DraftingService:
     ) -> tuple[dict, dict]:
         engine = "self_hosted" if (
             is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
-        ) else "notebooklm"
+        ) else "self_hosted"
         data = await ai_client.request(
             "/internal/draft/edit",
             user_id=(current_user or {}).get("id", ""),

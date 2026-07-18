@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 7000
     ai_internal_token: str = ""
-    ai_engine: str = "notebooklm"
+    ai_engine: str = "self_hosted"
     # BE expose retrieval nội bộ (pgvector + FTS) để Researcher dùng chung
     # retrieval với Chat RAG, thay vì tự quét toàn bộ tài liệu bằng LLM.
     be_service_url: str = "http://be:6868"

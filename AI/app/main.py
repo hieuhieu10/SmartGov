@@ -38,7 +38,7 @@ class Envelope(BaseModel):
     request_id: str
     repo_id: str = ""
     user_id: str = ""
-    engine: str = "notebooklm"
+    engine: str = "self_hosted"
     input_data: dict[str, Any] = Field(default_factory=dict)
 
 

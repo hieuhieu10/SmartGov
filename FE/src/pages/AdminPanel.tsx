@@ -190,12 +190,10 @@ export function AdminPanel() {
   };
 
   const ENGINE_LABELS: Record<string, string> = {
-    notebooklm: 'Server 1',
-    self_hosted: 'Server 2',
+    self_hosted: 'AI nội bộ',
   };
 
   const ENGINE_COLORS: Record<string, string> = {
-    notebooklm: 'bg-violet-500/10 text-violet-500',
     self_hosted: 'bg-teal-500/10 text-teal-500',
   };
 
@@ -453,13 +451,12 @@ export function AdminPanel() {
                   <select value={userForm.ai_engine} onChange={e => setUserForm({ ...userForm, ai_engine: e.target.value })}
                     className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                     <option value="">-- Máy chủ xử lý: Mặc định hệ thống --</option>
-                    <option value="notebooklm">Server 1</option>
-                    <option value="self_hosted">Server 2</option>
+                    <option value="self_hosted">AI nội bộ</option>
                   </select>
                 ) : (
                   <div className="bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-slate-600 flex items-center gap-2">
-                    <Cpu size={16} className="text-violet-500" />
-                    <span className="text-sm font-medium">Máy chủ xử lý: Server 1</span>
+                    <Cpu size={16} className="text-teal-500" />
+                    <span className="text-sm font-medium">Máy chủ xử lý: AI nội bộ</span>
                   </div>
                 )}
               </div>

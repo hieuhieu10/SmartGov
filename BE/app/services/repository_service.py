@@ -94,7 +94,7 @@ class RepositoryService:
         exclude_repo_id: str | None = None,
     ) -> None:
         """Evict least recently used Server 1 repository notebooks when capacity is full."""
-        limit = max(int(settings.notebooklm_max_notebooks or 450), 1)
+        limit = max(int(settings.server1_max_repositories or 450), 1)
         active_count = await db.count_active_notebooklm_repositories(session_fingerprint)
         if active_count < limit:
             return

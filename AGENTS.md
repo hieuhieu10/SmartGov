@@ -1,18 +1,18 @@
-# AGENTS.md - OfficeAI Context
+# AGENTS.md - Thư ký Ơi Context
+
+Tài liệu này là context ngắn cho coding agent. Bộ tài liệu đầy đủ nằm trong [`docs/README.md`](docs/README.md).
 
 ## Architecture
 
 ```text
-FE (React/Nginx) -> BE (FastAPI public) -> PostgreSQL 16
+FE (React/Nginx) -> BE (FastAPI public) -> PostgreSQL 16 + pgvector
                          |
                          +-> AI (FastAPI internal, port 7000)
 ```
 
 - `FE/` chỉ gọi `/api` trên BE.
-- `BE/` sở hữu auth, RBAC, PostgreSQL, repository/document/task/history,
-  upload/download, SSE và Word export.
-- `AI/` sở hữu NotebookLM, vLLM, MarkItDown, document scanner, drafting
-  agents và template/audio AI. AI không import database hoặc auth của BE.
+- `BE/` sở hữu auth, RBAC, PostgreSQL, repository/document/task/history, upload/download, SSE và Word export.
+- `AI/` sở hữu OCR/Markdown, embedding, RAG answer generation, drafting agents, template/dataset/summary services và các tác vụ AI nội bộ.
 - BE gọi AI bằng HTTP với `AI_SERVICE_URL` và `X-AI-Internal-Token`.
 
 ## Database
@@ -34,7 +34,16 @@ docker compose logs -f be ai
 - FE: `http://localhost:3000`
 - BE: `http://localhost:6868`
 - AI chỉ nằm trong Docker network tại `ai:7000`.
-- Shared volumes: uploads, outputs, repo files, templates và NotebookLM session.
+- Shared volumes: uploads, outputs, repo files và templates.
+
+## Documentation
+
+- Tổng quan repo: [`README.md`](README.md)
+- Bản đồ tài liệu: [`docs/README.md`](docs/README.md)
+- Kiến trúc: [`docs/architecture/overview.md`](docs/architecture/overview.md)
+- RAG: [`docs/architecture/rag-system.md`](docs/architecture/rag-system.md)
+- API: [`docs/api/api-reference.md`](docs/api/api-reference.md)
+- Product spec: [`docs/product/problem-statement.md`](docs/product/problem-statement.md)
 
 ## Rules
 
