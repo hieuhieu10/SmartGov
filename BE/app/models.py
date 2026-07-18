@@ -270,6 +270,20 @@ class DocumentResponse(BaseModel):
     uploaded_at: DateTimeStr
 
 
+class DocumentVersionResponse(BaseModel):
+    """Immutable snapshot created whenever a document is uploaded or saved."""
+    id: str
+    document_id: str
+    version_number: int
+    filename: str
+    file_size: int
+    file_type: str
+    changed_by_name: str = ""
+    change_type: str = "edited"
+    created_at: DateTimeStr
+    is_current: bool = False
+
+
 class DatasetField(BaseModel):
     """A table-like field/column extracted from a document."""
     key: str = Field(description="Stable key for FE binding, vd: noi_dung_gop_y")

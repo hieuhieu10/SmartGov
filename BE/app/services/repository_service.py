@@ -24,6 +24,64 @@ logger = logging.getLogger(__name__)
 class RepositoryService:
     """Business logic for managing data repositories."""
 
+    @staticmethod
+    def _editor_name(current_user: dict | None) -> str:
+        if not current_user:
+            return "Người dùng"
+        return current_user.get("full_name") or current_user.get("username") or "Người dùng"
+
+    async def create_document_snapshot(
+        self,
+        doc: dict,
+        content: bytes,
+        current_user: dict | None,
+        change_type: str,
+    ) -> dict:
+        """Persist an immutable file copy and its version metadata."""
+        versions_dir = (
+            Path(settings.repo_files_dir)
+            / doc["repository_id"]
+            / ".versions"
+            / doc["id"]
+        )
+        versions_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(doc["filename"]).suffix or ".bin"
+        snapshot_path = versions_dir / f"{uuid.uuid4()}{suffix}"
+        snapshot_path.write_bytes(content)
+        try:
+            return await db.create_document_version(
+                document_id=doc["id"],
+                filename=doc["filename"],
+                stored_path=str(snapshot_path),
+                file_size=len(content),
+                file_type=doc.get("file_type") or "",
+                changed_by=current_user.get("id") if current_user else None,
+                changed_by_name=self._editor_name(current_user),
+                change_type=change_type,
+            )
+        except Exception:
+            snapshot_path.unlink(missing_ok=True)
+            raise
+
+    async def ensure_document_history(
+        self,
+        doc: dict,
+        current_user: dict | None,
+    ) -> list[dict]:
+        versions = await db.get_document_versions(doc["id"])
+        if versions:
+            return versions
+        source_path = Path(doc.get("stored_path") or "")
+        if not source_path.exists():
+            raise ValueError("Không tìm thấy file tài liệu để tạo lịch sử")
+        await self.create_document_snapshot(
+            doc,
+            source_path.read_bytes(),
+            current_user,
+            "created",
+        )
+        return await db.get_document_versions(doc["id"])
+
     def _looks_like_capacity_error(self, error: Exception) -> bool:
         message = str(error).lower()
         return any(token in message for token in (
@@ -404,6 +462,7 @@ class RepositoryService:
             processing_status="processing",
             progress_message="Đang chuyển đổi tài liệu",
         )
+        await self.create_document_snapshot(doc, content, current_user, "created")
 
         return doc
 
@@ -416,12 +475,15 @@ class RepositoryService:
         content: bytes,
         file_type: str = "",
         current_user: dict = None,
+        version_change_type: str = "edited",
     ) -> dict:
         """Replace an existing document file and reset its processed data."""
         repo = await self.verify_ownership(repo_id, user_id)
         doc = await db.get_document_by_id(doc_id)
         if not doc or doc["repository_id"] != repo_id:
             raise ValueError("Tài liệu không tồn tại trong kho này")
+
+        await self.ensure_document_history(doc, current_user)
 
         use_self_hosted = is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
         if not use_self_hosted and repo.get("notebook_id") and doc.get("notebooklm_source_id"):
@@ -456,6 +518,12 @@ class RepositoryService:
         )
         if not updated:
             raise ValueError("Tài liệu không tồn tại trong kho này")
+        await self.create_document_snapshot(
+            updated,
+            content,
+            current_user,
+            version_change_type,
+        )
         logger.info("Replaced document file: %s (%s bytes)", doc_id, len(content))
         return updated
 
@@ -590,6 +658,14 @@ class RepositoryService:
             if stored.exists():
                 stored.unlink()
                 logger.info(f"Deleted file: {doc['stored_path']}")
+            versions_dir = (
+                Path(settings.repo_files_dir)
+                / repo_id
+                / ".versions"
+                / doc_id
+            )
+            if versions_dir.exists():
+                shutil.rmtree(versions_dir)
         except Exception as e:
             logger.warning(f"Could not delete file: {e}")
 

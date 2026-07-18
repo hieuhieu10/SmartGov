@@ -135,6 +135,19 @@ export interface Document {
   uploaded_at: string;
 }
 
+export interface DocumentVersion {
+  id: string;
+  document_id: string;
+  version_number: number;
+  filename: string;
+  file_size: number;
+  file_type: string;
+  changed_by_name: string;
+  change_type: 'created' | 'edited' | 'restored' | string;
+  created_at: string;
+  is_current: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -286,6 +299,22 @@ export const ApiClient = {
 
   getDocumentFile: (repoId: string, docId: string) =>
     api.get<Blob>(`/repositories/${repoId}/documents/${docId}/file`, { responseType: 'blob' }).then(r => r.data),
+
+  getDocumentVersions: (repoId: string, docId: string) =>
+    api.get<DocumentVersion[]>(`/repositories/${repoId}/documents/${docId}/versions`).then(r => r.data),
+
+  getDocumentVersionFile: (repoId: string, docId: string, versionId: string) =>
+    api.get<Blob>(`/repositories/${repoId}/documents/${docId}/versions/${versionId}/file`, {
+      responseType: 'blob',
+    }).then(r => r.data),
+
+  getDocumentVersionDiffFile: (repoId: string, docId: string, versionId: string) =>
+    api.get<Blob>(`/repositories/${repoId}/documents/${docId}/versions/${versionId}/diff-file`, {
+      responseType: 'blob',
+    }).then(r => r.data),
+
+  restoreDocumentVersion: (repoId: string, docId: string, versionId: string) =>
+    api.post<Document>(`/repositories/${repoId}/documents/${docId}/versions/${versionId}/restore`).then(r => r.data),
 
   getDatasetWordPreview: (payload: DocumentDatasetWordPayload) =>
     api.post('/document-datasets/word/preview', payload, { responseType: 'text' }).then(r => r.data),
