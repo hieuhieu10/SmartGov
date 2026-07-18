@@ -109,6 +109,23 @@ class AIClient:
         )
         return MeetingMinutes(**data["minutes"])
 
+    async def consolidate_feedback(
+        self,
+        repo_id: str,
+        feedback_documents: list[dict],
+        draft_documents: list[dict] | None = None,
+    ) -> dict:
+        data = await self.request(
+            "/internal/summary/consolidate",
+            repo_id=repo_id,
+            engine="self_hosted",
+            input_data={
+                "feedback_documents": feedback_documents,
+                "draft_documents": draft_documents or [],
+            },
+        )
+        return data.get("summary") or {}
+
     async def convert_and_store(self, doc_id: str, file_path: str) -> str:
         data = await self.request(
             "/internal/documents/convert", input_data={"stored_path": file_path}

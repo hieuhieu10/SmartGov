@@ -22,6 +22,7 @@ from app.services.document_scanner import (
 from app.services.drafting_service import drafting_service
 from app.services.llm_service import llm_service
 from app.services.notebooklm_service import notebooklm_service
+from app.services.summary_service import summary_service
 from app.services.template_service import template_service
 
 logger = logging.getLogger("officeai.ai")
@@ -115,6 +116,14 @@ async def chat_self_hosted(payload: Envelope) -> dict:
         return ok({"answer": answer})
     finally:
         reset_request_documents(token)
+
+
+@app.post("/internal/summary/consolidate", dependencies=[Depends(require_internal_token)])
+async def consolidate_feedback(payload: Envelope) -> dict:
+    feedback_docs = payload.input_data.get("feedback_documents") or _documents(payload)
+    draft_docs = payload.input_data.get("draft_documents") or []
+    summary = await summary_service.consolidate_feedback(feedback_docs, draft_docs)
+    return ok({"summary": summary})
 
 
 @app.post("/internal/draft/generate", dependencies=[Depends(require_internal_token)])

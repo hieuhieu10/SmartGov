@@ -13,7 +13,9 @@ from app.auth import get_current_user, can_access_repo
 from app.config import settings
 from app import database as db
 from app.models import DocumentResponse
+from app.services.ai_client import AIServiceError
 from app.services.docx_preview import render_docx_preview_html
+from app.services.feedback_summary_service import feedback_summary_service
 from app.services.repository_service import repository_service
 
 logger = logging.getLogger(__name__)
@@ -149,6 +151,34 @@ async def upload_document(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+
+@router.post("/consolidate", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+async def consolidate_feedback(
+    repo_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Tạo bản tổng hợp ý kiến từ các văn bản góp ý (folder feedback).
+
+    Kết quả được lưu thành một tài liệu .docx mới trong folder "Bảng tổng hợp
+    ý kiến" (summary).
+    """
+    repo = await can_access_repo(repo_id, current_user)
+    if not repo.get("is_owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ sở hữu kho mới có quyền tạo bản tổng hợp",
+        )
+    try:
+        doc = await feedback_summary_service.create_summary(repo_id, current_user["id"])
+        return _build_document_response(doc)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except AIServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_public_ai_text(str(e)),
+        )
 
 
 @router.get("", response_model=list[DocumentResponse])

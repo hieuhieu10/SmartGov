@@ -24,6 +24,7 @@ import {
   Eye,
   Download,
   Save,
+  Sparkles,
 } from "lucide-react";
 
 const DOCUMENT_FOLDERS = [
@@ -69,6 +70,8 @@ export function RepositoryManager() {
   const [isCreating, setIsCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState(false);
   const [isRepoListCollapsed, setIsRepoListCollapsed] = useState(false);
+  const [isConsolidating, setIsConsolidating] = useState(false);
+  const [consolidateError, setConsolidateError] = useState("");
   const [viewingDocId, setViewingDocId] = useState<string | null>(null);
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
   const [updatingDocId, setUpdatingDocId] = useState<string | null>(null);
@@ -555,6 +558,23 @@ export function RepositoryManager() {
     }
   };
 
+  const handleConsolidateFeedback = async () => {
+    if (!selectedRepo || isConsolidating) return;
+    setConsolidateError("");
+    setIsConsolidating(true);
+    try {
+      await ApiClient.consolidateFeedback(selectedRepo.id);
+      await fetchDocs(selectedRepo.id);
+      setSelectedFolderKey("summary");
+    } catch (err: any) {
+      setConsolidateError(
+        err?.response?.data?.detail || "Không thể tạo bản tổng hợp. Vui lòng thử lại."
+      );
+    } finally {
+      setIsConsolidating(false);
+    }
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -939,6 +959,36 @@ export function RepositoryManager() {
                     })}
                   </div>
                 </div>
+
+                {/* Nút "Soạn tài liệu" cố định ở góc dưới bên phải — AI đọc các
+                    văn bản góp ý và soạn Bảng tổng hợp tiếp thu, giải trình. */}
+                {selectedFolderKey === "feedback" && !selectedRepo.is_shared && (
+                  <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+                    {consolidateError && (
+                      <p className="max-w-xs rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 shadow-sm ring-1 ring-rose-100">
+                        {consolidateError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleConsolidateFeedback}
+                      disabled={isConsolidating || visibleDocuments.length === 0}
+                      className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
+                      title={
+                        visibleDocuments.length === 0
+                          ? "Chưa có văn bản góp ý để soạn tài liệu tổng hợp"
+                          : "AI đọc các văn bản góp ý và soạn Bảng tổng hợp tiếp thu, giải trình vào thư mục \"Bảng tổng hợp ý kiến\""
+                      }
+                    >
+                      {isConsolidating ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={18} />
+                      )}
+                      {isConsolidating ? "Đang soạn..." : "Soạn tài liệu"}
+                    </button>
+                  </div>
+                )}
 
                 {visibleDocuments.length === 0 && !selectedRepo.is_shared && (
                   <div className="pt-5">

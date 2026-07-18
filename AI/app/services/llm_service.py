@@ -40,7 +40,10 @@ class LLMService:
             self._client = AsyncOpenAI(
                 base_url=settings.vllm_base_url,
                 api_key=settings.vllm_api_key,
-                timeout=600.0,  # 10 phút — tài liệu lớn cần thời gian xử lý
+                # Fail-fast: hết timeout là bỏ ngay, KHÔNG retry (max_retries=0),
+                # để rơi sang model dự phòng luôn thay vì retry nhiều lần chờ lâu.
+                timeout=settings.vllm_primary_timeout,
+                max_retries=0,
                 default_headers=default_headers,
             )
             logger.info(f"LLM client initialized: {settings.vllm_base_url} / {settings.vllm_model_name}")
@@ -54,7 +57,7 @@ class LLMService:
             self._fallback_client = AsyncOpenAI(
                 base_url=settings.vllm_fallback_base_url,
                 api_key=settings.vllm_fallback_api_key,
-                timeout=600.0,
+                timeout=settings.vllm_fallback_timeout,
             )
             logger.info(
                 f"LLM fallback client initialized: "

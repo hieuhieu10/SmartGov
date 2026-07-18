@@ -1,0 +1,10 @@
+# Local dev override.
+# OCR chạy platform linux/amd64 -> emulation QEMU trên Mac arm64 rất chậm khi
+# import paddle. OCR chỉ là fallback (xem OCR/app/main.py), nên không chặn stack.
+# Đổi điều kiện depends_on của AI từ service_healthy -> service_started để
+# ai/be/fe khởi động ngay; OCR vẫn chạy nền và healthy khi import xong.
+services:
+  ai:
+    depends_on:
+      ocr:
+        condition: service_started

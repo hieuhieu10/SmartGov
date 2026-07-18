@@ -270,6 +270,9 @@ export const ApiClient = {
   deleteDocument: (repoId: string, docId: string) =>
     api.delete(`/repositories/${repoId}/documents/${docId}`),
 
+  consolidateFeedback: (repoId: string) =>
+    api.post<Document>(`/repositories/${repoId}/documents/consolidate`).then(r => r.data),
+
   getDocumentPreview: (repoId: string, docId: string) =>
     api.get(`/repositories/${repoId}/documents/${docId}/preview`, { responseType: 'text' }).then(r => r.data),
 

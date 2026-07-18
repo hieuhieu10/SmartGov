@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     vllm_fallback_base_url: str = ""
     vllm_fallback_model_name: str = ""
     vllm_fallback_api_key: str = ""
+    # Model chính fail-fast: chờ tối đa ngần này (giây) rồi chuyển fallback ngay,
+    # không retry, để giảm thời gian chờ khi model chính timeout/quá tải.
+    vllm_primary_timeout: float = 240.0
+    vllm_fallback_timeout: float = 600.0
     ocr_vllm_base_url: str = "http://host.docker.internal:8686/v1"
     ocr_vllm_model_name: str = "your-vision-model"
     ocr_vllm_api_key: str = ""
