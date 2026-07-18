@@ -37,7 +37,6 @@ services:
 
   ai:
     build: ./AI
-    platform: linux/amd64
     container_name: officeai-ai
     restart: unless-stopped
     extra_hosts:
@@ -84,7 +83,6 @@ services:
 
   be:
     build: ./BE
-    platform: linux/amd64
     container_name: officeai-be
     restart: unless-stopped
     ports:
