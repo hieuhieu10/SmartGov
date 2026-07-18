@@ -2,12 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { DocxEditor, type DocxEditorRef } from "@eigenpal/docx-editor-react";
 import "@eigenpal/docx-editor-react/styles.css";
 import { ApiClient, getStoredUser } from "../api/client";
-import type {
-  Repository,
-  Document,
-  DocumentVersion,
-  RepositoryCategory,
-} from "../api/client";
+import type { Repository, Document, RepositoryCategory } from "../api/client";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Database,
@@ -32,9 +27,6 @@ import {
   RefreshCw,
   Save,
   Sparkles,
-  History,
-  RotateCcw,
-  UserRound,
 } from "lucide-react";
 
 const DOCUMENT_FOLDERS = [
@@ -54,6 +46,8 @@ export function RepositoryManager() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedFolderKey, setSelectedFolderKey] =
     useState<DocumentFolderKey>("draft");
+  const [selectedDraftDocumentId, setSelectedDraftDocumentId] = useState("");
+  const [selectedFeedbackDocumentId, setSelectedFeedbackDocumentId] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     completed: number;
@@ -97,14 +91,6 @@ export function RepositoryManager() {
     null
   );
   const [isDocxEditorSaving, setIsDocxEditorSaving] = useState(false);
-  const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<DocumentVersion | null>(null);
-  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
-  const [isLoadingVersionFile, setIsLoadingVersionFile] = useState(false);
-  const [isRestoringVersion, setIsRestoringVersion] = useState(false);
-  const [showVersionHistory, setShowVersionHistory] = useState(true);
-  const [highlightVersionChanges, setHighlightVersionChanges] = useState(true);
-  const [docxEditorInstanceKey, setDocxEditorInstanceKey] = useState(0);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
   const docxEditorRef = useRef<DocxEditorRef | null>(null);
   const docxEditorSavingRef = useRef(false);
@@ -199,6 +185,8 @@ export function RepositoryManager() {
   const handleSelectRepo = (repo: Repository) => {
     setSelectedRepo(repo);
     setSelectedFolderKey("draft");
+    setSelectedDraftDocumentId("");
+    setSelectedFeedbackDocumentId("");
   };
 
   const handleViewDoc = async (doc: Document) => {
@@ -261,23 +249,6 @@ export function RepositoryManager() {
     setDocxEditorBuffer(null);
     setDocxEditorError("");
     setDocxEditorDirty(false);
-    setDocumentVersions([]);
-    setSelectedVersion(null);
-  };
-
-  const fetchDocumentVersions = async (repoId: string, docId: string) => {
-    setIsLoadingVersions(true);
-    try {
-      const versions = await ApiClient.getDocumentVersions(repoId, docId);
-      setDocumentVersions(versions);
-      return versions;
-    } catch (err) {
-      console.error("Could not load document versions", err);
-      setDocumentVersions([]);
-      return [];
-    } finally {
-      setIsLoadingVersions(false);
-    }
   };
 
   const openDocxEditor = async (doc: Document) => {
@@ -291,18 +262,10 @@ export function RepositoryManager() {
     setDocxEditorBuffer(null);
     setDocxEditorError("");
     setDocxEditorDirty(false);
-    setSelectedVersion(null);
-    setDocumentVersions([]);
-    setShowVersionHistory(true);
-    setHighlightVersionChanges(true);
     setLoadingDocxEditorId(doc.id);
     try {
-      const [blob] = await Promise.all([
-        ApiClient.getDocumentFile(selectedRepo.id, doc.id),
-        fetchDocumentVersions(selectedRepo.id, doc.id),
-      ]);
+      const blob = await ApiClient.getDocumentFile(selectedRepo.id, doc.id);
       setDocxEditorBuffer(await blob.arrayBuffer());
-      setDocxEditorInstanceKey((value) => value + 1);
     } catch (err: any) {
       setDocxEditorError(err.response?.data?.detail || "Không thể mở file DOCX");
     } finally {
@@ -320,19 +283,12 @@ export function RepositoryManager() {
       const file = new File([buffer], docxEditorDoc.filename, {
         type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
-      const updatedDoc = await ApiClient.replaceDocument(
-        selectedRepo.id,
-        docxEditorDoc.id,
-        file
-      );
+      await ApiClient.replaceDocument(selectedRepo.id, docxEditorDoc.id, file);
       await fetchDocs(selectedRepo.id);
       await fetchRepos();
-      await fetchDocumentVersions(selectedRepo.id, docxEditorDoc.id);
-      setDocxEditorDoc(updatedDoc);
-      setDocxEditorBuffer(buffer.slice(0));
-      setDocxEditorInstanceKey((value) => value + 1);
-      setSelectedVersion(null);
       setDocxEditorDirty(false);
+      setDocxEditorDoc(null);
+      setDocxEditorBuffer(null);
     } catch (err: any) {
       setDocxEditorError(err.response?.data?.detail || "Không thể lưu file DOCX");
     } finally {
@@ -348,108 +304,6 @@ export function RepositoryManager() {
       return;
     }
     await saveDocxEditorBuffer(buffer);
-  };
-
-  const loadDocumentVersion = async (
-    version: DocumentVersion,
-    highlightChanges = highlightVersionChanges
-  ) => {
-    if (!selectedRepo || !docxEditorDoc || isLoadingVersionFile) return;
-    if (docxEditorDirty) {
-      const discard = confirm(
-        "Bạn có thay đổi chưa lưu. Mở lịch sử sẽ bỏ các thay đổi này."
-      );
-      if (!discard) return;
-    }
-
-    setIsLoadingVersionFile(true);
-    setDocxEditorError("");
-    try {
-      const blob =
-        highlightChanges && version.version_number > 1
-          ? await ApiClient.getDocumentVersionDiffFile(
-              selectedRepo.id,
-              docxEditorDoc.id,
-              version.id
-            )
-          : await ApiClient.getDocumentVersionFile(
-            selectedRepo.id,
-            docxEditorDoc.id,
-            version.id
-          );
-      setDocxEditorBuffer(await blob.arrayBuffer());
-      setSelectedVersion(version);
-      setDocxEditorDirty(false);
-      setDocxEditorInstanceKey((value) => value + 1);
-    } catch (err: any) {
-      setDocxEditorError(
-        err.response?.data?.detail || "Không thể mở phiên bản tài liệu"
-      );
-    } finally {
-      setIsLoadingVersionFile(false);
-    }
-  };
-
-  const returnToCurrentEditing = async () => {
-    if (!selectedRepo || !docxEditorDoc || isLoadingVersionFile) return;
-    setIsLoadingVersionFile(true);
-    setDocxEditorError("");
-    try {
-      const blob = await ApiClient.getDocumentFile(
-        selectedRepo.id,
-        docxEditorDoc.id
-      );
-      setDocxEditorBuffer(await blob.arrayBuffer());
-      setSelectedVersion(null);
-      setDocxEditorDirty(false);
-      setDocxEditorInstanceKey((value) => value + 1);
-    } catch (err: any) {
-      setDocxEditorError(
-        err.response?.data?.detail || "Không thể quay lại bản đang chỉnh sửa"
-      );
-    } finally {
-      setIsLoadingVersionFile(false);
-    }
-  };
-
-  const toggleVersionHighlight = async (enabled: boolean) => {
-    setHighlightVersionChanges(enabled);
-    if (selectedVersion) {
-      await loadDocumentVersion(selectedVersion, enabled);
-    }
-  };
-
-  const restoreSelectedVersion = async () => {
-    if (!selectedRepo || !docxEditorDoc || !selectedVersion || isRestoringVersion)
-      return;
-    if (!confirm(`Khôi phục phiên bản ${selectedVersion.version_number}?`)) return;
-
-    setIsRestoringVersion(true);
-    setDocxEditorError("");
-    try {
-      const updatedDoc = await ApiClient.restoreDocumentVersion(
-        selectedRepo.id,
-        docxEditorDoc.id,
-        selectedVersion.id
-      );
-      const [blob] = await Promise.all([
-        ApiClient.getDocumentFile(selectedRepo.id, docxEditorDoc.id),
-        fetchDocumentVersions(selectedRepo.id, docxEditorDoc.id),
-        fetchDocs(selectedRepo.id),
-        fetchRepos(),
-      ]);
-      setDocxEditorDoc(updatedDoc);
-      setDocxEditorBuffer(await blob.arrayBuffer());
-      setSelectedVersion(null);
-      setDocxEditorDirty(false);
-      setDocxEditorInstanceKey((value) => value + 1);
-    } catch (err: any) {
-      setDocxEditorError(
-        err.response?.data?.detail || "Không thể khôi phục phiên bản"
-      );
-    } finally {
-      setIsRestoringVersion(false);
-    }
   };
 
   const openReplaceDocPicker = (doc: Document) => {
@@ -716,7 +570,7 @@ export function RepositoryManager() {
     setConsolidateError("");
     setIsConsolidating(true);
     try {
-      await ApiClient.consolidateFeedback(selectedRepo.id);
+      await ApiClient.consolidateFeedback(selectedRepo.id, selectedFeedbackDocumentId);
       await fetchDocs(selectedRepo.id);
       setSelectedFolderKey("summary");
     } catch (err: any) {
@@ -771,6 +625,12 @@ export function RepositoryManager() {
     DOCUMENT_FOLDERS[0];
   const visibleDocuments = documents.filter(
     (doc) => (doc.folder_key || "draft") === selectedFolderKey
+  );
+  const draftDocuments = documents.filter(
+    (doc) => (doc.folder_key || "draft") === "draft"
+  );
+  const feedbackDocuments = documents.filter(
+    (doc) => (doc.folder_key || "draft") === "feedback"
   );
   const folderDocumentCount = (folderKey: DocumentFolderKey) =>
     documents.filter((doc) => (doc.folder_key || "draft") === folderKey).length;
@@ -1147,8 +1007,35 @@ export function RepositoryManager() {
 
                 {/* Nút "Soạn tài liệu" cố định ở góc dưới bên phải — AI đọc các
                     văn bản góp ý và soạn Bảng tổng hợp tiếp thu, giải trình. */}
+                {selectedFolderKey === "draft" && (
+                  <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+                    <p className="text-sm font-semibold text-slate-800">Chọn file dự thảo từ kho dữ liệu</p>
+                    <p className="mt-1 text-xs text-slate-500">File dự thảo được chọn từ tài liệu đã có trong kho; không tải file mới tại đây.</p>
+                    <select
+                      value={selectedDraftDocumentId}
+                      onChange={(event) => setSelectedDraftDocumentId(event.target.value)}
+                      className="mt-3 w-full max-w-xl rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                    >
+                      <option value="">-- Chọn file dự thảo --</option>
+                      {draftDocuments.map((doc) => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
+                    </select>
+                  </div>
+                )}
                 {selectedFolderKey === "feedback" && !selectedRepo.is_shared && (
-                  <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+                  <div className="mt-5 flex flex-wrap items-end justify-between gap-4 rounded-xl border border-violet-100 bg-violet-50/60 p-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-800">Chọn một văn bản góp ý từ kho dữ liệu</p>
+                      <p className="mt-1 text-xs text-slate-500">Chỉ văn bản đã chọn sẽ được dùng để soạn Bảng tổng hợp ý kiến.</p>
+                      <select
+                        value={selectedFeedbackDocumentId}
+                        onChange={(event) => setSelectedFeedbackDocumentId(event.target.value)}
+                        className="mt-3 w-full max-w-xl rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        <option value="">-- Chọn một văn bản góp ý --</option>
+                        {feedbackDocuments.map((doc) => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
                     {consolidateError && (
                       <p className="max-w-xs rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 shadow-sm ring-1 ring-rose-100">
                         {consolidateError}
@@ -1157,12 +1044,12 @@ export function RepositoryManager() {
                     <button
                       type="button"
                       onClick={handleConsolidateFeedback}
-                      disabled={isConsolidating || visibleDocuments.length === 0}
+                      disabled={isConsolidating || !selectedFeedbackDocumentId}
                       className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
                       title={
-                        visibleDocuments.length === 0
-                          ? "Chưa có văn bản góp ý để soạn tài liệu tổng hợp"
-                          : "AI đọc các văn bản góp ý và soạn Bảng tổng hợp tiếp thu, giải trình vào thư mục \"Bảng tổng hợp ý kiến\""
+                        !selectedFeedbackDocumentId
+                          ? "Chọn một văn bản góp ý trước khi soạn tài liệu"
+                          : "AI đọc văn bản góp ý đã chọn và soạn Bảng tổng hợp tiếp thu, giải trình"
                       }
                     >
                       {isConsolidating ? (
@@ -1172,10 +1059,11 @@ export function RepositoryManager() {
                       )}
                       {isConsolidating ? "Đang soạn..." : "Soạn tài liệu"}
                     </button>
+                    </div>
                   </div>
                 )}
 
-                {visibleDocuments.length === 0 && !selectedRepo.is_shared && (
+                {false && visibleDocuments.length === 0 && !selectedRepo?.is_shared && (
                   <div className="pt-5">
                     <label
                       onDragEnter={handleDragOver}
@@ -1203,7 +1091,7 @@ export function RepositoryManager() {
                       </span>
                       <span className="text-xs text-slate-500 text-center">
                         {isUploading && uploadProgress
-                          ? `Đang upload ${uploadProgress.completed}/${uploadProgress.total} file...`
+                          ? `Đang upload ${uploadProgress?.completed ?? 0}/${uploadProgress?.total ?? 0} file...`
                           : "hoặc bấm để chọn nhiều file"}
                       </span>
                       <input
@@ -1217,7 +1105,7 @@ export function RepositoryManager() {
                   </div>
                 )}
 
-                {!selectedRepo.is_shared && visibleDocuments.length > 0 && (
+                {false && !selectedRepo?.is_shared && visibleDocuments.length > 0 && (
                   <label
                     onDragEnter={handleDragOver}
                     onDragOver={handleDragOver}
@@ -1241,7 +1129,7 @@ export function RepositoryManager() {
                     )}
                     <span className="text-sm font-medium text-slate-700">
                       {isUploading && uploadProgress
-                        ? `Đang upload ${uploadProgress.completed}/${uploadProgress.total} file...`
+                        ? `Đang upload ${uploadProgress?.completed ?? 0}/${uploadProgress?.total ?? 0} file...`
                         : `Kéo thả nhiều file vào ${selectedFolder.name}`}
                     </span>
                     <input
@@ -1424,71 +1312,31 @@ export function RepositoryManager() {
                     {docxEditorDoc.filename}
                   </h2>
                   <p className="text-xs text-slate-500 truncate">
-                    {selectedVersion
-                      ? `Đang xem phiên bản ${selectedVersion.version_number}`
-                      : docxEditorDirty
+                    {docxEditorDirty
                       ? "Có thay đổi chưa lưu"
                       : "Đang soạn thảo DOCX"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {selectedVersion?.is_current ? (
-                    <button
-                      type="button"
-                      onClick={() => void returnToCurrentEditing()}
-                      disabled={isLoadingVersionFile}
-                      className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60"
-                    >
-                      <Pencil size={16} />
-                      <span className="hidden sm:inline">Quay lại chỉnh sửa</span>
-                    </button>
-                  ) : selectedVersion ? (
-                    <button
-                      type="button"
-                      onClick={restoreSelectedVersion}
-                      disabled={isRestoringVersion}
-                      className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60"
-                    >
-                      {isRestoringVersion ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <RotateCcw size={16} />
-                      )}
-                      <span className="hidden sm:inline">Khôi phục bản này</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={saveDocxEditor}
-                      disabled={
-                        isDocxEditorSaving ||
-                        !docxEditorBuffer ||
-                        Boolean(docxEditorError)
-                      }
-                      className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                      title="Lưu DOCX"
-                    >
-                      {isDocxEditorSaving ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <Save size={16} />
-                      )}
-                      <span className="hidden sm:inline">
-                        {isDocxEditorSaving ? "Đang lưu" : "Lưu"}
-                      </span>
-                    </button>
-                  )}
                   <button
                     type="button"
-                    onClick={() => setShowVersionHistory((value) => !value)}
-                    className={`p-2 rounded-lg transition-colors ${
-                      showVersionHistory
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                    }`}
-                    title="Lịch sử chỉnh sửa"
+                    onClick={saveDocxEditor}
+                    disabled={
+                      isDocxEditorSaving ||
+                      !docxEditorBuffer ||
+                      Boolean(docxEditorError)
+                    }
+                    className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    title="Lưu DOCX"
                   >
-                    <History size={20} />
+                    {isDocxEditorSaving ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Save size={16} />
+                    )}
+                    <span className="hidden sm:inline">
+                      {isDocxEditorSaving ? "Đang lưu" : "Lưu"}
+                    </span>
                   </button>
                   <button
                     type="button"
@@ -1519,140 +1367,27 @@ export function RepositoryManager() {
                   <p className="text-sm font-medium">Đang tải file DOCX...</p>
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 overflow-hidden bg-slate-100 flex relative isolate">
-                  <div className="flex-1 min-w-0 h-full relative z-0">
-                    {(isLoadingVersionFile || isRestoringVersion) && (
-                      <div className="absolute inset-0 z-20 bg-white/75 flex items-center justify-center">
-                        <Loader2 size={28} className="animate-spin text-blue-600" />
-                      </div>
-                    )}
-                    <DocxEditor
-                      key={docxEditorInstanceKey}
-                      ref={docxEditorRef}
-                      documentBuffer={docxEditorBuffer}
-                      documentName={docxEditorDoc.filename}
-                      documentNameEditable={false}
-                      author={getStoredUser()?.full_name || "User"}
-                      mode={selectedVersion ? "viewing" : "editing"}
-                      showFileOpen={false}
-                      showRuler
-                      rulerUnit="cm"
-                      initialZoom={0.9}
-                      className="h-full"
-                      onChange={() => {
-                        if (!selectedVersion) setDocxEditorDirty(true);
-                      }}
-                      onSave={(buffer) => {
-                        if (!selectedVersion) void saveDocxEditorBuffer(buffer);
-                      }}
-                      onError={(err) =>
-                        setDocxEditorError(
-                          err.message || "Trình soạn thảo DOCX gặp lỗi"
-                        )
-                      }
-                    />
-                  </div>
-
-                  {showVersionHistory && (
-                    <aside className="absolute lg:relative inset-y-0 right-0 z-40 w-[min(20rem,calc(100vw-2rem))] lg:w-80 shrink-0 border-l border-slate-200 bg-white shadow-xl lg:shadow-none flex flex-col">
-                      <div className="h-14 px-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-                        <div>
-                          <h3 className="font-semibold text-slate-900">
-                            Lịch sử chỉnh sửa
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            {documentVersions.length} phiên bản
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowVersionHistory(false)}
-                          className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md"
-                          title="Đóng lịch sử"
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
-
-                      <div className="flex-1 overflow-y-auto p-3">
-                        {isLoadingVersions ? (
-                          <div className="h-32 flex items-center justify-center">
-                            <Loader2 size={22} className="animate-spin text-blue-600" />
-                          </div>
-                        ) : documentVersions.length === 0 ? (
-                          <div className="py-10 text-center text-sm text-slate-500">
-                            Chưa có lịch sử chỉnh sửa
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {documentVersions.map((version) => {
-                              const active = selectedVersion
-                                ? selectedVersion.id === version.id
-                                : version.is_current;
-                              const actionLabel =
-                                version.change_type === "created"
-                                  ? "Tạo tài liệu"
-                                  : version.change_type === "restored"
-                                    ? "Khôi phục phiên bản"
-                                    : "Chỉnh sửa tài liệu";
-                              return (
-                                <button
-                                  key={version.id}
-                                  type="button"
-                                  onClick={() => void loadDocumentVersion(version)}
-                                  className={`w-full text-left px-3 py-3 border-l-2 transition-colors ${
-                                    active
-                                      ? "border-blue-600 bg-blue-50"
-                                      : "border-transparent hover:bg-slate-50"
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-sm font-semibold text-slate-800">
-                                      {new Intl.DateTimeFormat("vi-VN", {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                        day: "2-digit",
-                                        month: "2-digit",
-                                        year: "numeric",
-                                      }).format(new Date(version.created_at))}
-                                    </span>
-                                    {version.is_current && (
-                                      <span className="text-[11px] font-medium text-blue-700">
-                                        Hiện tại
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="mt-1 text-xs text-slate-500">
-                                    {actionLabel} · Phiên bản {version.version_number}
-                                  </p>
-                                  <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-600">
-                                    <UserRound size={13} className="text-emerald-600" />
-                                    <span className="truncate">
-                                      {version.changed_by_name || "Người dùng"}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      <div className="shrink-0 border-t border-slate-200 px-4 py-3">
-                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={highlightVersionChanges}
-                            onChange={(event) =>
-                              void toggleVersionHighlight(event.target.checked)
-                            }
-                            className="h-4 w-4 accent-blue-600"
-                          />
-                          <span className="h-3 w-5 bg-yellow-200 border border-yellow-300" />
-                          Làm nổi bật nội dung thay đổi
-                        </label>
-                      </div>
-                    </aside>
-                  )}
+                <div className="flex-1 min-h-0 overflow-hidden bg-slate-100">
+                  <DocxEditor
+                    ref={docxEditorRef}
+                    documentBuffer={docxEditorBuffer}
+                    documentName={docxEditorDoc.filename}
+                    documentNameEditable={false}
+                    author={getStoredUser()?.full_name || "User"}
+                    mode="editing"
+                    showFileOpen={false}
+                    showRuler
+                    rulerUnit="cm"
+                    initialZoom={0.9}
+                    className="h-full"
+                    onChange={() => setDocxEditorDirty(true)}
+                    onSave={(buffer) => void saveDocxEditorBuffer(buffer)}
+                    onError={(err) =>
+                      setDocxEditorError(
+                        err.message || "Trình soạn thảo DOCX gặp lỗi"
+                      )
+                    }
+                  />
                 </div>
               )}
             </motion.div>

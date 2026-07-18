@@ -87,7 +87,6 @@ class UserInfo(BaseModel):
     org_name: Optional[str] = None
     dept_id: Optional[str] = None
     dept_name: Optional[str] = None
-    ai_engine: Optional[str] = None
     created_at: Optional[DateTimeStr] = None
 
 
@@ -159,11 +158,6 @@ class AdminUserCreate(BaseModel):
     role: str = Field(default="user", pattern="^(user|org_admin|system_admin)$")
     org_id: Optional[str] = None
     dept_id: Optional[str] = None
-    ai_engine: Optional[str] = Field(
-        None,
-        pattern="^(self_hosted)$",
-        description="Máy chủ xử lý cho user: self_hosted hoặc null (dùng mặc định hệ thống)",
-    )
 
 
 class AdminUserUpdate(BaseModel):
@@ -173,11 +167,6 @@ class AdminUserUpdate(BaseModel):
     role: Optional[str] = Field(None, pattern="^(user|org_admin|system_admin)$")
     org_id: Optional[str] = None
     dept_id: Optional[str] = None
-    ai_engine: Optional[str] = Field(
-        None,
-        pattern="^(self_hosted|)$",
-        description="Máy chủ xử lý: self_hosted. Gửi giá trị rỗng '' để reset về mặc định hệ thống.",
-    )
 
 
 class AdminUserResponse(BaseModel):
@@ -190,7 +179,6 @@ class AdminUserResponse(BaseModel):
     org_name: Optional[str] = None
     dept_id: Optional[str] = None
     dept_name: Optional[str] = None
-    ai_engine: Optional[str] = None
     created_at: Optional[DateTimeStr] = None
 
 
@@ -243,7 +231,6 @@ class RepositoryResponse(BaseModel):
     id: str
     name: str
     description: str
-    notebook_id: Optional[str] = None
     category_id: Optional[str] = None
     category_name: Optional[str] = None
     document_count: int = 0
@@ -268,20 +255,6 @@ class DocumentResponse(BaseModel):
     chunk_count: int = 0
     processed_at: Optional[DateTimeStr] = None
     uploaded_at: DateTimeStr
-
-
-class DocumentVersionResponse(BaseModel):
-    """Immutable snapshot created whenever a document is uploaded or saved."""
-    id: str
-    document_id: str
-    version_number: int
-    filename: str
-    file_size: int
-    file_type: str
-    changed_by_name: str = ""
-    change_type: str = "edited"
-    created_at: DateTimeStr
-    is_current: bool = False
 
 
 class DatasetField(BaseModel):

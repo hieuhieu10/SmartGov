@@ -1,6 +1,7 @@
 """Chat domain service. AI execution is delegated to the internal AI service."""
 
 import asyncio
+import json
 import logging
 import re
 from typing import AsyncGenerator
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatService:
-    async def ask_question(self, repo_id: str, user_id: str, question: str) -> str:
+    async def ask_question(self, repo_id: str, user_id: str, question: str) -> tuple[str, list[dict]]:
         """Answer a chat question.
 
         RAG-only: chat luôn thử trả lời bằng RAG (pgvector + hybrid search)
@@ -46,7 +47,13 @@ class ChatService:
             )
             raise
         await db.add_chat_message(repo_id, user_id, "assistant", answer)
-        return answer
+        # Chart generation is optional and must never make the normal answer fail.
+        try:
+            charts = await ai_client.analyze_charts(answer, question, repo_id, user_id)
+        except Exception as exc:
+            logger.info("Chart generation skipped: %s", exc)
+            charts = []
+        return answer, charts
 
     async def _try_rag_answer(self, repo_id: str, user_id: str, question: str) -> str:
         try:
@@ -81,14 +88,15 @@ class ChatService:
             lines.append(f"[{idx}] {citation}\n{excerpt}")
         return "\n\n".join(lines)
 
-    async def stream_response(self, full_response: str) -> AsyncGenerator[str, None]:
+    async def stream_response(self, full_response: str, charts: list[dict] | None = None) -> AsyncGenerator[str, None]:
         tokens = re.findall(r"\S+\s*", full_response)
         if not tokens:
-            yield f'{{"type": "chunk", "content": "{full_response}"}}'
+            yield json.dumps({"type": "chunk", "content": full_response}, ensure_ascii=False)
         for token in tokens:
-            escaped = token.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
-            yield f'{{"type": "chunk", "content": "{escaped}"}}'
+            yield json.dumps({"type": "chunk", "content": token}, ensure_ascii=False)
             await asyncio.sleep(STREAM_DELAY_MS / 1000)
+        if charts:
+            yield json.dumps({"type": "chart", "charts": charts}, ensure_ascii=False)
         yield '{"type": "done", "content": ""}'
 
     async def get_history(self, repo_id: str, user_id: str, limit: int = 50):

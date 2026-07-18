@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ApiClient, getStoredUser } from '../api/client';
 import type { OrgInfo, DeptInfo, AdminUser } from '../api/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Building2, Users, FolderTree, Plus, Trash2, Edit3, Save, X, Shield, UserPlus, Loader2, ChevronRight, Cpu } from 'lucide-react';
+import { Building2, Users, FolderTree, Plus, Trash2, Edit3, Save, X, Shield, UserPlus, Loader2, ChevronRight } from 'lucide-react';
 
 type Tab = 'orgs' | 'depts' | 'users';
 
@@ -28,7 +28,7 @@ export function AdminPanel() {
 
   const [showUserForm, setShowUserForm] = useState(false);
   const [userForm, setUserForm] = useState({
-    username: '', password: '', full_name: '', role: 'user', org_id: '', dept_id: '', ai_engine: '',
+    username: '', password: '', full_name: '', role: 'user', org_id: '', dept_id: '',
   });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
@@ -143,7 +143,6 @@ export function AdminPanel() {
           role: updateData.role || undefined,
           org_id: updateData.org_id || undefined,
           dept_id: updateData.dept_id || undefined,
-          ...(isSystemAdmin ? { ai_engine: updateData.ai_engine || undefined } : {}),
         });
       } else {
         await ApiClient.createUser({
@@ -153,12 +152,11 @@ export function AdminPanel() {
           role: userForm.role,
           org_id: userForm.org_id || undefined,
           dept_id: userForm.dept_id || undefined,
-          ...(isSystemAdmin ? { ai_engine: userForm.ai_engine || undefined } : {}),
         });
       }
       await loadUsers();
       setShowUserForm(false);
-      setUserForm({ username: '', password: '', full_name: '', role: 'user', org_id: '', dept_id: '', ai_engine: '' });
+      setUserForm({ username: '', password: '', full_name: '', role: 'user', org_id: '', dept_id: '' });
       setEditingUserId(null);
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Lỗi');
@@ -187,14 +185,6 @@ export function AdminPanel() {
     system_admin: 'bg-rose-500/10 text-rose-400',
     org_admin: 'bg-amber-500/10 text-amber-400',
     user: 'bg-slate-500/10 text-slate-400',
-  };
-
-  const ENGINE_LABELS: Record<string, string> = {
-    self_hosted: 'AI nội bộ',
-  };
-
-  const ENGINE_COLORS: Record<string, string> = {
-    self_hosted: 'bg-teal-500/10 text-teal-500',
   };
 
   const tabs = [
@@ -411,7 +401,7 @@ export function AdminPanel() {
         <div className="space-y-4">
           <button onClick={() => {
             setShowUserForm(true); setEditingUserId(null);
-            setUserForm({ username: '', password: '', full_name: '', role: 'user', org_id: '', dept_id: '', ai_engine: '' });
+            setUserForm({ username: '', password: '', full_name: '', role: 'user', org_id: '', dept_id: '' });
           }}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center gap-2 transition-colors">
             <UserPlus size={16} /> Thêm tài khoản
@@ -447,18 +437,6 @@ export function AdminPanel() {
                   <option value="">-- Chọn phòng ban --</option>
                   {orgDepts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
-                {isSystemAdmin ? (
-                  <select value={userForm.ai_engine} onChange={e => setUserForm({ ...userForm, ai_engine: e.target.value })}
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                    <option value="">-- Máy chủ xử lý: Mặc định hệ thống --</option>
-                    <option value="self_hosted">AI nội bộ</option>
-                  </select>
-                ) : (
-                  <div className="bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-slate-600 flex items-center gap-2">
-                    <Cpu size={16} className="text-teal-500" />
-                    <span className="text-sm font-medium">Máy chủ xử lý: AI nội bộ</span>
-                  </div>
-                )}
               </div>
               <div className="flex gap-2">
                 <button onClick={handleSaveUser} disabled={loading || (!editingUserId && (!userForm.username || !userForm.password))}
@@ -479,7 +457,6 @@ export function AdminPanel() {
                 <tr>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Tài khoản</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Vai trò</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Máy chủ xử lý</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Đơn vị</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Phòng ban</th>
                   <th className="text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Thao tác</th>
@@ -497,16 +474,6 @@ export function AdminPanel() {
                         {ROLE_LABELS[u.role] || u.role}
                       </span>
                     </td>
-                    <td className="px-5 py-3">
-                      {u.ai_engine ? (
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-md ${ENGINE_COLORS[u.ai_engine] || 'bg-slate-100 text-slate-500'}`}>
-                          <Cpu size={11} />
-                          {ENGINE_LABELS[u.ai_engine] || u.ai_engine}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400 italic">Mặc định</span>
-                      )}
-                    </td>
                     <td className="px-5 py-3 text-sm text-slate-600">{u.org_name || '-'}</td>
                     <td className="px-5 py-3 text-sm text-slate-600">{u.dept_name || '-'}</td>
                     <td className="px-5 py-3 text-right">
@@ -516,7 +483,6 @@ export function AdminPanel() {
                           setUserForm({
                             username: u.username, password: '', full_name: u.full_name,
                             role: u.role, org_id: u.org_id || '', dept_id: u.dept_id || '',
-                            ai_engine: u.ai_engine || '',
                           });
                           setShowUserForm(true);
                         }} className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg">

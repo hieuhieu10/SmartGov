@@ -39,7 +39,6 @@ class TemplateService:
     async def generate_from_headings(
         self,
         headings: list[dict],
-        notebook_id: str,
         doc_type_label: str,
         trich_yeu: str,
         user_input: dict,
@@ -54,7 +53,6 @@ class TemplateService:
             engine=engine,
             input_data={
                 "headings": headings,
-                "notebook_id": notebook_id,
                 "doc_type_label": doc_type_label,
                 "trich_yeu": trich_yeu,
                 "user_input": user_input,

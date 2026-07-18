@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ApiClient } from '../api/client';
-import type { Repository, RepositoryCategory, ChatMessage } from '../api/client';
+import type { Repository, RepositoryCategory, ChatMessage, ChatChart } from '../api/client';
+import { ChatCharts } from '../components/ChatCharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Bot, User, Loader2, Database, Trash2, MessageSquare, X, AlertTriangle, Folder } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -10,7 +11,7 @@ import remarkGfm from 'remark-gfm';
 
 export function ChatAssistant() {
   const [searchParams] = useSearchParams();
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: string; content: string; charts?: ChatChart[] }[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingText, setStreamingText] = useState('');
@@ -69,11 +70,16 @@ export function ChatAssistant() {
 
     try {
       let fullResponse = '';
-      for await (const chunk of ApiClient.chatStream(selectedRepoId, userQuery)) {
-        fullResponse += chunk;
-        setStreamingText(fullResponse);
+      let charts: ChatChart[] = [];
+      for await (const event of ApiClient.chatStream(selectedRepoId, userQuery)) {
+        if (event.type === 'chunk') {
+          fullResponse += event.content;
+          setStreamingText(fullResponse);
+        } else if (event.type === 'chart') {
+          charts = event.charts;
+        }
       }
-      setMessages(prev => [...prev, { role: 'assistant', content: fullResponse }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: fullResponse, charts }]);
       setStreamingText('');
     } catch (error: any) {
       console.error(error);
@@ -128,7 +134,7 @@ export function ChatAssistant() {
             <Bot size={18} />
           </div>
           <div className="flex-1">
-            <h2 className="font-bold text-slate-800">Office AI</h2>
+            <h2 className="font-bold text-slate-800">Trợ lý Ơi</h2>
             <p className="text-xs text-slate-500">
               {selectedRepo ? `Kho: ${selectedRepo.name}` : 'Vui lòng chọn kho dữ liệu'}
             </p>
@@ -214,9 +220,8 @@ export function ChatAssistant() {
                     : "bg-white text-slate-800 border border-slate-100 rounded-tl-none [&>p:not(:last-child)]:mb-2 [&_ul]:list-disc [&_ul]:ml-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:ml-5 [&_ol]:mb-2 [&_strong]:font-bold [&_em]:italic [&_a]:text-blue-600 [&_a]:underline [&_h1]:text-xl [&_h1]:font-bold [&_h2]:text-lg [&_h2]:font-bold [&_h3]:font-bold"
                 )}>
                   {msg.role === 'user' ? msg.content : (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
-                    </ReactMarkdown>
+                    <><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    {msg.charts?.length ? <ChatCharts charts={msg.charts} /> : null}</>
                   )}
                 </div>
                 {msg.role === 'user' && (

@@ -35,9 +35,7 @@ class Settings(BaseSettings):
     data_dir: str = str(BASE_DIR / "data")
     user_templates_dir: str = str(BASE_DIR / "user_templates")
 
-    # AI Engine
     ai_engine: str = "self_hosted"
-    server1_max_repositories: int = 450
 
     # PostgreSQL (owned exclusively by BE)
     database_url: str = "postgresql+asyncpg://officeai:officeai@postgres:5432/officeai"

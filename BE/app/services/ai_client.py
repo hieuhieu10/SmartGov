@@ -51,10 +51,6 @@ def _json_safe(value: Any) -> Any:
 
 
 class AIClient:
-    async def get_session_fingerprint(self) -> str:
-        data = await self.request("/internal/notebook/session")
-        return data.get("session_fingerprint", "")
-
     def _timeout(self, kind: str) -> httpx.Timeout:
         seconds = 5 if kind == "health" else 300 if kind == "chat" else 1800
         return httpx.Timeout(seconds, connect=5)
@@ -106,26 +102,6 @@ class AIClient:
             }
             for row in rows
         ]
-
-    async def create_notebook(self, name: str) -> str:
-        data = await self.request("/internal/notebook/create", input_data={"name": name})
-        return data["notebook_id"]
-
-    async def delete_notebook(self, notebook_id: str) -> None:
-        await self.request("/internal/notebook/delete", input_data={"notebook_id": notebook_id})
-
-    async def upload_source(self, notebook_id: str, file_path: str):
-        data = await self.request(
-            "/internal/notebook/source/upload",
-            input_data={"notebook_id": notebook_id, "stored_path": file_path},
-        )
-        return data.get("source_id")
-
-    async def delete_source(self, notebook_id: str, source_id: str) -> None:
-        await self.request(
-            "/internal/notebook/source/delete",
-            input_data={"notebook_id": notebook_id, "source_id": source_id},
-        )
 
     async def consolidate_feedback(
         self,
@@ -199,6 +175,14 @@ class AIClient:
             kind="chat",
         )
         return str(data.get("answer") or "")
+
+    async def analyze_charts(self, text: str, request: str, repo_id: str, user_id: str) -> list[dict]:
+        data = await self.request(
+            "/internal/charts/analyze", repo_id=repo_id, user_id=user_id,
+            input_data={"text": text, "request": request}, kind="chat",
+        )
+        charts = data.get("charts") or []
+        return charts if isinstance(charts, list) else []
 
 
 ai_client = AIClient()
