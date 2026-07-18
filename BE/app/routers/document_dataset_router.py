@@ -1,5 +1,6 @@
 """Document dataset extraction API."""
 
+import logging
 import re
 import uuid
 from pathlib import Path
@@ -11,10 +12,12 @@ from starlette.background import BackgroundTask
 from app.auth import get_current_user
 from app.config import settings
 from app.models import DocumentDatasetResponse, DocumentDatasetWordRequest
+from app.services.ai_client import AIServiceError, ai_client
 from app.services.document_dataset_service import document_dataset_service
 from app.services.docx_preview import render_docx_preview_html
 from app.services.nd30_exporter import build as build_nd30_docx
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/document-datasets", tags=["Document Datasets"])
 
@@ -50,10 +53,12 @@ async def extract_document_dataset(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
 ):
-    """Return title, content and table-field schema extracted from a document.
+    """Extract title, content and table-field schema from an uploaded document.
 
-    This endpoint is intentionally BE-owned so FE can integrate against a stable
-    contract before the AI extractor is available.
+    The file is converted to Markdown and read by the AI service (LLM), then
+    mapped into the stable dataset contract FE already integrates against. If
+    AI extraction fails for any reason, falls back to a clearly-labeled mock
+    response instead of failing the request outright.
     """
     _ = current_user
     if not file.filename:
@@ -69,7 +74,32 @@ async def extract_document_dataset(
             detail=f"Chi ho tro file {', '.join(settings.allowed_doc_extensions)}.",
         )
 
-    return document_dataset_service.build_mock_response(file.filename)
+    content = await file.read()
+    if len(content) > settings.max_doc_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File quá lớn. Giới hạn: {settings.max_doc_upload_mb}MB",
+        )
+
+    tmp_dir = Path(settings.upload_dir) / "dataset_extract_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = tmp_dir / f"{uuid.uuid4()}_{Path(file.filename).name}"
+    try:
+        tmp_path.write_bytes(content)
+        document_data = await ai_client.extract_dataset(str(tmp_path), file.filename)
+        if not document_data:
+            raise AIServiceError("AI trả dữ liệu rỗng")
+        return document_dataset_service.build_ai_response(file.filename, document_data)
+    except Exception as exc:
+        logger.warning("Dataset AI extraction failed for %s: %s", file.filename, exc)
+        response = document_dataset_service.build_mock_response(file.filename)
+        response.message = f"AI trích xuất thất bại ({exc}); đang hiển thị dữ liệu mẫu tạm thời."
+        return response
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @router.post("/word/preview", response_class=HTMLResponse)

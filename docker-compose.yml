@@ -15,26 +15,6 @@ services:
       timeout: 5s
       retries: 10
 
-  ocr:
-    build: ./OCR
-    platform: linux/amd64
-    container_name: officeai-ocr
-    restart: unless-stopped
-    environment:
-      REPO_FILES_DIR: /app/repo_files
-      PADDLEOCR_LANG: vi
-      OCR_PDF_DPI: 180
-      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
-    volumes:
-      - officeai-repofiles:/app/repo_files
-      - officeai-ocr-models:/root/.paddlex
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7100/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
   ai:
     build: ./AI
     container_name: officeai-ai
@@ -47,7 +27,9 @@ services:
     environment:
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?AI_INTERNAL_TOKEN is required}
       AI_ENGINE: ${AI_ENGINE:-notebooklm}
-      OCR_SERVICE_URL: http://ocr:7100
+      # Agent Researcher gọi ngược về BE để dùng chung hybrid search (pgvector
+      # + FTS) với Chat RAG, xác thực bằng chính AI_INTERNAL_TOKEN ở trên.
+      BE_SERVICE_URL: http://be:6868
     env_file:
       - path: ./AI/.env
         required: false
@@ -65,9 +47,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    depends_on:
-      ocr:
-        condition: service_healthy
 
   be:
     build: ./BE
@@ -124,5 +103,4 @@ volumes:
   officeai-uploads:
   officeai-outputs:
   officeai-repofiles:
-  officeai-ocr-models:
   officeai-templates:

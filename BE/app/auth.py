@@ -9,7 +9,7 @@ from typing import Optional
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
@@ -20,6 +20,17 @@ logger = logging.getLogger(__name__)
 # ─── Security scheme ─────────────────────────────────────────────────
 
 security = HTTPBearer()
+
+
+async def require_ai_internal_token(
+    x_ai_internal_token: str = Header(default="", alias="X-AI-Internal-Token"),
+) -> None:
+    """Xác thực request gọi NGƯỢC từ AI service về BE (ví dụ Agent Researcher
+    dùng shared retrieval). Dùng lại đúng secret `AI_INTERNAL_TOKEN` mà BE
+    cũng dùng để gọi AI — không thêm secret mới, cùng mô hình tin cậy 2 chiều.
+    """
+    if not settings.ai_internal_token or x_ai_internal_token != settings.ai_internal_token:
+        raise HTTPException(status_code=401, detail="Invalid internal AI token")
 
 
 # ─── Password Hashing ────────────────────────────────────────────────

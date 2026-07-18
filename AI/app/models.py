@@ -1,11 +1,9 @@
 """
-STTNB Models — Pydantic schemas for meeting minutes and API responses.
-Cấu trúc khớp với mẫu biên bản họp thể thức hành chính nhà nước VN.
+STTNB Models — Pydantic schemas for API responses.
 """
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Optional
@@ -27,7 +25,7 @@ DateTimeStr = Annotated[str, BeforeValidator(_to_str)]
 # ─── Processing Status ───────────────────────────────────────────────
 
 class TaskStatus(str, Enum):
-    """Status of the audio-to-minutes processing pipeline."""
+    """Status of a long-running background processing task (e.g. drafting)."""
     PENDING = "pending"
     UPLOADING = "uploading"
     PROCESSING = "processing"
@@ -35,152 +33,6 @@ class TaskStatus(str, Enum):
     EXPORTING_WORD = "exporting_word"
     COMPLETED = "completed"
     ERROR = "error"
-
-
-# ─── Meeting Minutes Data ────────────────────────────────────────────
-
-class ContentSection(BaseModel):
-    """Mục nội dung trong phần II."""
-    tieu_de_muc: str = Field(description="Tiêu đề mục (vd: 1. Về quy trình triển khai...)")
-    mo_ta: str = Field(default="", description="Đoạn mô tả tổng quan đầu mục (nếu có)")
-    chi_tiet: list[str] = Field(
-        default_factory=list,
-        description="Danh sách các gạch đầu dòng chi tiết (dùng - hoặc +)"
-    )
-    luu_y: str = Field(default="", description="Phần lưu ý đặc biệt (nếu có)")
-
-
-class MeetingMinutes(BaseModel):
-    """Biên bản cuộc họp — đúng thể thức hành chính nhà nước VN."""
-
-    # Header hành chính
-    ten_co_quan_chu_quan: str = Field(
-        default="", description="Cơ quan chủ quản (vd: UBND TỈNH TÂY NINH)"
-    )
-    ten_don_vi: str = Field(
-        default="", description="Tên đơn vị (vd: SỞ KHOA HỌC VÀ CÔNG NGHỆ)"
-    )
-
-    # Tiêu đề biên bản
-    tieu_de: str = Field(
-        default="BIÊN BẢN",
-        description="Luôn là 'BIÊN BẢN'"
-    )
-    tieu_de_noi_dung: str = Field(
-        default="",
-        description="Nội dung cuộc họp (vd: Họp thống nhất quy trình triển khai...)"
-    )
-
-    # Đoạn mở đầu
-    thoi_gian: str = Field(
-        default="",
-        description="Mô tả thời gian mở đầu (vd: Vào lúc 16 giờ 00 phút, ngày 30 tháng 3 năm 2026)"
-    )
-    dia_diem: str = Field(
-        default="",
-        description="Mô tả địa điểm (vd: tại Phòng họp trực tuyến (lầu 3) - trụ sở...)"
-    )
-    mo_dau: str = Field(
-        default="",
-        description="Đoạn mở đầu đầy đủ bao gồm thời gian, địa điểm, thành phần tóm tắt, mục đích cuộc họp"
-    )
-
-    # I. THÀNH PHẦN THAM DỰ
-    chu_tri: str = Field(
-        default="",
-        description="Đ/c + Họ tên - Chức vụ (vd: Đ/c Huỳnh Thị Hồng Nhung - Giám đốc Sở)"
-    )
-    thu_ky: str = Field(
-        default="",
-        description="Đ/c + Họ tên - Chức vụ (vd: Đ/c Nguyễn Thị Kim Quyên - Chuyên viên phòng Khoa học)"
-    )
-    thanh_vien: list[str] = Field(
-        default_factory=list,
-        description="Danh sách thành viên, mỗi dòng: - Đ/c Họ tên - Chức vụ"
-    )
-
-    # II. NỘI DUNG CUỘC HỌP
-    dan_nhap_noi_dung: str = Field(
-        default="",
-        description="Đoạn dẫn nhập nội dung (vd: Sau khi nghe... báo cáo..., trên cơ sở ý kiến thảo luận..., Giám đốc đã thống nhất và kết luận các nội dung cụ thể như sau:)"
-    )
-    noi_dung: list[ContentSection] = Field(
-        default_factory=list,
-        description="Các mục nội dung cuộc họp (đánh số 1., 2., 3.)"
-    )
-
-    # III/IV. KẾT LUẬN CỦA CHỦ TRÌ
-    ket_luan: str = Field(
-        default="",
-        description="Kết luận, chỉ đạo của chủ trì cuộc họp"
-    )
-    ket_thuc: str = Field(
-        default="",
-        description="Câu kết thúc (vd: Cuộc họp kết thúc vào lúc 18 giờ 00 phút cùng ngày./.)"
-    )
-
-    # Ký tên
-    ten_thu_ky: str = Field(default="", description="Họ tên thư ký (không có chức danh)")
-    ten_chu_tri: str = Field(default="", description="Họ tên chủ trì (không có chức danh)")
-
-    # Nơi nhận
-    noi_nhan: list[str] = Field(
-        default_factory=lambda: [
-            "Thành viên họp;",
-            "Các phòng, đơn vị thuộc Sở (thực hiện);",
-            "Lưu: VT.",
-        ],
-        description="Danh sách nơi nhận"
-    )
-
-
-# ─── Audio Processing Schemas ────────────────────────────────────────
-
-class AudioTaskResponse(BaseModel):
-    """Response for DB-backed audio task."""
-    id: str
-    filename: str
-    status: str
-    progress_message: str
-    error_message: str
-    output_file: Optional[str] = None
-    created_at: DateTimeStr
-    updated_at: DateTimeStr
-    output_ready: bool = False
-
-
-# (Legacy RAM-based classes kept for backwards compatibility during migration if any)
-class ProcessingTask(BaseModel):
-    """Tracking object for a processing task."""
-    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    status: TaskStatus = TaskStatus.PENDING
-    filename: str = ""
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
-    progress_message: str = ""
-    error_message: str = ""
-    notebook_id: Optional[str] = None
-    output_file: Optional[str] = None
-    minutes: Optional[MeetingMinutes] = None
-
-
-class UploadResponse(BaseModel):
-    """Response returned after uploading an audio file."""
-    task_id: str
-    status: str
-    message: str
-
-
-class StatusResponse(BaseModel):
-    """Response for checking task status."""
-    task_id: str
-    status: str
-    filename: str
-    progress_message: str
-    error_message: str
-    created_at: datetime
-    output_ready: bool = False
-    minutes: Optional[MeetingMinutes] = None
 
 
 class HealthResponse(BaseModel):

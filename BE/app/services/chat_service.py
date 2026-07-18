@@ -6,52 +6,40 @@ import re
 from typing import AsyncGenerator
 
 from app import database as db
-from app.auth import is_user_self_hosted
-from app.config import settings
 from app.services.ai_client import ai_client
+from app.services.retrieval_service import retrieval_service
 
 STREAM_DELAY_MS = 35
 logger = logging.getLogger(__name__)
 
 
 class ChatService:
-    async def ask_question(
-        self, repo_id: str, user_id: str, notebook_id: str, question: str, current_user: dict = None
-    ) -> str:
+    async def ask_question(self, repo_id: str, user_id: str, question: str) -> str:
+        """Answer a chat question.
+
+        RAG-only: chat luôn thử trả lời bằng RAG (pgvector + hybrid search)
+        trước; nếu RAG không có gì để trả lời (kho chưa có vector, hoặc không
+        tìm thấy nội dung liên quan), fallback sang self-hosted DocumentScanner
+        — luồng chat KHÔNG còn phụ thuộc NotebookLM (cần session Google đăng
+        nhập qua browser), nên không còn bị lỗi 500 khi NotebookLM chưa login.
+        """
         await db.add_chat_message(repo_id, user_id, "user", question)
-        engine = "self_hosted" if (
-            is_user_self_hosted(current_user) if current_user else settings.is_self_hosted
-        ) else "notebooklm"
         try:
             answer = await self._try_rag_answer(repo_id, user_id, question)
-            if answer:
-                answer = re.sub(r"<br\s*/?>", "\n", answer, flags=re.IGNORECASE)
-            elif engine == "self_hosted":
+            if not answer:
                 data = await ai_client.request(
                     "/internal/chat/self-hosted",
                     repo_id=repo_id,
                     user_id=user_id,
-                    engine=engine,
+                    engine="self_hosted",
                     input_data={
                         "question": question,
                         "documents": await ai_client.documents(repo_id),
                     },
                     kind="chat",
                 )
-                answer = re.sub(r"<br\s*/?>", "\n", data["answer"], flags=re.IGNORECASE)
-            else:
-                data = await ai_client.request(
-                    "/internal/notebook/chat",
-                    repo_id=repo_id,
-                    user_id=user_id,
-                    engine=engine,
-                    input_data={
-                        "notebook_id": notebook_id,
-                        "question": f"{question}\n\n(Hãy trả lời dạng văn xuôi, không dùng bảng)",
-                    },
-                    kind="chat",
-                )
-                answer = re.sub(r"<br\s*/?>", "\n", data["answer"], flags=re.IGNORECASE)
+                answer = data["answer"]
+            answer = re.sub(r"<br\s*/?>", "\n", answer, flags=re.IGNORECASE)
         except Exception:
             await db.add_chat_message(
                 repo_id, user_id, "assistant", "Lỗi hệ thống khi xử lý câu hỏi. Vui lòng thử lại sau."
@@ -62,25 +50,7 @@ class ChatService:
 
     async def _try_rag_answer(self, repo_id: str, user_id: str, question: str) -> str:
         try:
-            await self._ensure_repository_vectors(repo_id)
-            if await db.count_repository_chunks(repo_id) <= 0:
-                return ""
-
-            embeddings = await ai_client.embed_texts([question], input_type="query")
-            query_embedding = embeddings[0] if embeddings else []
-            if not query_embedding:
-                return ""
-
-            contexts = await db.search_document_chunks_hybrid(
-                repo_id,
-                question,
-                query_embedding,
-                limit=settings.rag_top_k,
-                vector_candidates=settings.rag_vector_candidates,
-                text_candidates=settings.rag_text_candidates,
-                vector_weight=settings.rag_vector_weight,
-                text_weight=settings.rag_text_weight,
-            )
+            contexts = await retrieval_service.search(repo_id, question)
             if not contexts:
                 return ""
 
@@ -110,23 +80,6 @@ class ChatService:
                 excerpt = excerpt[:600].rsplit(" ", 1)[0] + "..."
             lines.append(f"[{idx}] {citation}\n{excerpt}")
         return "\n\n".join(lines)
-
-    async def _ensure_repository_vectors(self, repo_id: str) -> None:
-        docs = await db.get_documents_missing_chunks_by_repository(repo_id)
-        for doc in docs:
-            markdown = str(doc.get("markdown_content") or "").strip()
-            if not markdown:
-                continue
-            stored = await ai_client.chunk_embed_and_store(
-                doc["id"],
-                markdown,
-                str(doc.get("filename") or ""),
-            )
-            logger.info(
-                "Prepared %s vector chunks for %s",
-                stored,
-                doc.get("filename"),
-            )
 
     async def stream_response(self, full_response: str) -> AsyncGenerator[str, None]:
         tokens = re.findall(r"\S+\s*", full_response)

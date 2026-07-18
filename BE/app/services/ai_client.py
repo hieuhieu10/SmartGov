@@ -17,6 +17,23 @@ class AIServiceError(RuntimeError):
     pass
 
 
+def describe_conversion(markdown: str, vector_count: int) -> tuple[str, str]:
+    """Mô tả trạng thái vector thật sau khi convert/chunk-embed.
+
+    Trả về (đoạn mô tả ngắn, error_message). Nếu markdown có nội dung nhưng
+    không có vector nào được lưu, coi là embedding đã lỗi lúc xử lý (dù text
+    vẫn dùng được) — khác với trước đây khi `chunk_count` chỉ phản ánh số
+    chunk logic dự kiến, không phải số vector thực tế trong `document_chunks`.
+    """
+    char_count = len(markdown)
+    if markdown.strip() and vector_count == 0:
+        return (
+            f"{char_count} ký tự, CHƯA tạo được vector tìm kiếm",
+            "Nhúng vector (embedding) thất bại lúc xử lý; hệ thống sẽ tự tạo lại vector khi có câu hỏi",
+        )
+    return f"{char_count} ký tự, {vector_count} đoạn", ""
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _json_safe(item) for key, item in value.items()}
@@ -110,23 +127,6 @@ class AIClient:
             input_data={"notebook_id": notebook_id, "source_id": source_id},
         )
 
-    async def chat_ask(self, notebook_id: str, question: str) -> str:
-        data = await self.request(
-            "/internal/notebook/chat",
-            input_data={"notebook_id": notebook_id, "question": question},
-            kind="chat",
-        )
-        return data["answer"]
-
-    async def process_audio(self, audio_path: str, on_status=None):
-        from app.models import MeetingMinutes
-        if on_status:
-            await on_status("Đang xử lý nội dung âm thanh...")
-        data = await self.request(
-            "/internal/audio/process", input_data={"stored_path": audio_path}
-        )
-        return MeetingMinutes(**data["minutes"])
-
     async def consolidate_feedback(
         self,
         repo_id: str,
@@ -144,18 +144,31 @@ class AIClient:
         )
         return data.get("summary") or {}
 
-    async def convert_and_store(self, doc_id: str, file_path: str) -> str:
+    async def convert_and_store(self, doc_id: str, file_path: str) -> tuple[str, int]:
         data = await self.request(
             "/internal/documents/convert", input_data={"stored_path": file_path}
         )
         markdown = data.get("markdown_content", "")
-        chunk_count = int(data.get("chunk_count") or 0)
         chunks = data.get("chunks")
+        vector_count = len(chunks) if isinstance(chunks, list) else 0
         await db.update_document_markdown(doc_id, markdown)
-        await db.update_document_processing(doc_id, chunk_count=chunk_count)
-        if isinstance(chunks, list):
+        # chunk_count phải phản ánh số vector THẬT đã lưu, không phải số chunk
+        # logic AI dự kiến — nếu không, document có thể hiện "N đoạn" dù
+        # document_chunks rỗng khi embedding lỗi.
+        await db.update_document_processing(doc_id, chunk_count=vector_count)
+        if isinstance(chunks, list) and chunks:
             await db.replace_document_chunks(doc_id, chunks)
-        return markdown
+        return markdown, vector_count
+
+    async def extract_dataset(self, file_path: str, filename: str) -> dict:
+        data = await self.request(
+            "/internal/dataset/extract",
+            engine="self_hosted",
+            input_data={"stored_path": file_path, "filename": filename},
+            kind="long",
+        )
+        document_data = data.get("document_data")
+        return document_data if isinstance(document_data, dict) else {}
 
     async def embed_texts(self, texts: list[str], input_type: str = "document") -> list[list[float]]:
         data = await self.request(
@@ -172,13 +185,12 @@ class AIClient:
             input_data={"markdown_content": markdown, "filename": filename},
             kind="long",
         )
-        chunk_count = int(data.get("chunk_count") or 0)
         chunks = data.get("chunks")
-        await db.update_document_processing(doc_id, chunk_count=chunk_count)
-        if isinstance(chunks, list):
+        vector_count = len(chunks) if isinstance(chunks, list) else 0
+        await db.update_document_processing(doc_id, chunk_count=vector_count)
+        if isinstance(chunks, list) and chunks:
             await db.replace_document_chunks(doc_id, chunks)
-            return len(chunks)
-        return 0
+        return vector_count
 
     async def rag_answer(self, question: str, contexts: list[dict], history: list[dict]) -> str:
         data = await self.request(

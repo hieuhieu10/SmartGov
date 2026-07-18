@@ -15,7 +15,7 @@ from app.auth import get_current_user, can_access_repo
 from app.config import settings
 from app import database as db
 from app.models import DocumentResponse
-from app.services.ai_client import AIServiceError, ai_client
+from app.services.ai_client import AIServiceError, ai_client, describe_conversion
 from app.services.docx_preview import render_docx_preview_html
 from app.services.feedback_summary_service import feedback_summary_service
 from app.services.repository_service import repository_service
@@ -314,12 +314,13 @@ async def convert_document_to_markdown(
             progress_message="Đang OCR/chuyển đổi sang Markdown",
             error_message="",
         )
-        markdown = await ai_client.convert_and_store(doc_id, stored_path)
+        markdown, vector_count = await ai_client.convert_and_store(doc_id, stored_path)
+        note, error_message = describe_conversion(markdown, vector_count)
         updated = await db.update_document_processing(
             doc_id,
             status="completed",
-            progress_message=f"Đã OCR/chuyển đổi xong ({len(markdown)} ký tự)",
-            error_message="",
+            progress_message=f"Đã OCR/chuyển đổi xong ({note})",
+            error_message=error_message,
             processed_at=datetime.now().isoformat(),
         )
         return _build_document_response(updated or {**doc, "processing_status": "completed"})

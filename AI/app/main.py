@@ -20,6 +20,7 @@ from app.services.document_scanner import (
     reset_request_documents,
     set_request_documents,
 )
+from app.services.dataset_service import dataset_service
 from app.services.drafting_service import drafting_service
 from app.services.llm_service import llm_service
 from app.services.notebooklm_service import notebooklm_service
@@ -156,6 +157,15 @@ async def chat_self_hosted(payload: Envelope) -> dict:
         reset_request_documents(token)
 
 
+@app.post("/internal/dataset/extract", dependencies=[Depends(require_internal_token)])
+async def extract_dataset(payload: Envelope) -> dict:
+    path = payload.input_data["stored_path"]
+    filename = str(payload.input_data.get("filename") or "")
+    markdown = await asyncio.to_thread(document_converter.convert_to_markdown_only, path)
+    document_data = await dataset_service.extract(markdown, filename)
+    return ok({"document_data": document_data})
+
+
 @app.post("/internal/summary/consolidate", dependencies=[Depends(require_internal_token)])
 async def consolidate_feedback(payload: Envelope) -> dict:
     feedback_docs = payload.input_data.get("feedback_documents") or _documents(payload)
@@ -288,15 +298,3 @@ async def delete_source(payload: Envelope) -> dict:
     return ok()
 
 
-@app.post("/internal/notebook/chat", dependencies=[Depends(require_internal_token)])
-async def notebook_chat(payload: Envelope) -> dict:
-    answer = await notebooklm_service.chat_ask(
-        payload.input_data["notebook_id"], payload.input_data["question"]
-    )
-    return ok({"answer": answer})
-
-
-@app.post("/internal/audio/process", dependencies=[Depends(require_internal_token)])
-async def process_audio(payload: Envelope) -> dict:
-    minutes = await notebooklm_service.process_audio(payload.input_data["stored_path"])
-    return ok({"minutes": minutes.model_dump()})

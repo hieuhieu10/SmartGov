@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     port: int = 7000
     ai_internal_token: str = ""
     ai_engine: str = "notebooklm"
+    # BE expose retrieval nội bộ (pgvector + FTS) để Researcher dùng chung
+    # retrieval với Chat RAG, thay vì tự quét toàn bộ tài liệu bằng LLM.
+    be_service_url: str = "http://be:6868"
     upload_dir: str = str(BASE_DIR / "uploads")
     output_dir: str = str(BASE_DIR / "outputs")
     repo_files_dir: str = str(BASE_DIR / "repo_files")
@@ -47,7 +50,6 @@ class Settings(BaseSettings):
     # Lưới an toàn: cắt mỗi text về tối đa ngần này ký tự trước khi gọi API
     # embedding (tránh 400 "index out of range" với text dài bất thường).
     embedding_max_chars: int = 800
-    ocr_service_url: str = "http://ocr:7100"
     doc_chunk_size: int = 80000
     scanner_max_tokens: int = 8192
     context_max_chars: int = 400000

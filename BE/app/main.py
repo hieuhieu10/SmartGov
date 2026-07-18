@@ -10,7 +10,16 @@ from app.database import init_db
 from app.models import HealthResponse
 
 # Import routers
-from app.routers import admin_router, auth_router, chat_router, document_router, repository_router
+from app.routers import (
+    admin_router,
+    auth_router,
+    chat_router,
+    document_dataset_router,
+    document_router,
+    internal_retrieval_router,
+    repository_router,
+    revision_router,
+)
 
 # ─── Logging ──────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -45,6 +54,9 @@ app.include_router(admin_router.router)
 app.include_router(repository_router.router)
 app.include_router(document_router.router)
 app.include_router(chat_router.router)
+app.include_router(revision_router.router)
+app.include_router(document_dataset_router.router)
+app.include_router(internal_retrieval_router.router)
 
 
 # ─── System Endpoints ────────────────────────────────────────────────

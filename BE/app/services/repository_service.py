@@ -155,7 +155,7 @@ class RepositoryService:
         converted = 0
         failed = 0
 
-        from app.services.ai_client import ai_client as document_converter
+        from app.services.ai_client import ai_client as document_converter, describe_conversion
 
         for doc in docs:
             if doc.get("markdown_content"):
@@ -178,12 +178,13 @@ class RepositoryService:
                     status="processing",
                     progress_message="Đang chuẩn bị dữ liệu cho Server 2",
                 )
-                markdown = await document_converter.convert_and_store(doc["id"], stored_path)
+                markdown, vector_count = await document_converter.convert_and_store(doc["id"], stored_path)
+                note, error_message = describe_conversion(markdown, vector_count)
                 await db.update_document_processing(
                     doc["id"],
                     status="completed",
-                    progress_message=f"Đã sẵn sàng trên Server 2 ({len(markdown)} ký tự)",
-                    error_message="",
+                    progress_message=f"Đã sẵn sàng trên Server 2 ({note})",
+                    error_message=error_message,
                     processed_at=datetime.now().isoformat(),
                 )
                 converted += 1
@@ -495,32 +496,34 @@ class RepositoryService:
 
             if use_self_hosted:
                 # Self-hosted: AI converts; BE persists the returned markdown.
-                from app.services.ai_client import ai_client as document_converter
+                from app.services.ai_client import ai_client as document_converter, describe_conversion
 
                 await db.update_document_processing(
                     doc_id, status="processing",
                     progress_message="Đang chuyển đổi sang Markdown",
                 )
 
-                markdown = await document_converter.convert_and_store(doc_id, stored_path)
+                markdown, vector_count = await document_converter.convert_and_store(doc_id, stored_path)
+                note, error_message = describe_conversion(markdown, vector_count)
 
                 await db.update_document_processing(
                     doc_id,
                     status="completed",
-                    progress_message=f"Đã chuyển đổi xong ({len(markdown)} ký tự)",
-                    error_message="",
+                    progress_message=f"Đã chuyển đổi xong ({note})",
+                    error_message=error_message,
                     processed_at=datetime.now().isoformat(),
                 )
             else:
                 markdown = ""
+                vector_count = 0
                 try:
-                    from app.services.ai_client import ai_client as document_converter
+                    from app.services.ai_client import ai_client as document_converter, describe_conversion
 
                     await db.update_document_processing(
                         doc_id, status="processing",
                         progress_message="Đang lưu bản nội bộ cho Server 2",
                     )
-                    markdown = await document_converter.convert_and_store(doc_id, stored_path)
+                    markdown, vector_count = await document_converter.convert_and_store(doc_id, stored_path)
                 except Exception as e:
                     logger.warning("Could not prepare self-hosted copy for %s: %s", filename, e)
 
@@ -534,14 +537,15 @@ class RepositoryService:
                     logger.info(f"[NotebookLM] Uploaded source: {source_id}")
                     await db.update_document_source_id(doc_id, source_id)
 
+                note, error_message = describe_conversion(markdown, vector_count) if markdown else ("", "")
                 await db.update_document_processing(
                     doc_id,
                     status="completed",
                     progress_message=(
-                        f"Đã xử lý xong tài liệu, sẵn sàng trên Server 2 ({len(markdown)} ký tự)"
+                        f"Đã xử lý xong tài liệu, sẵn sàng trên Server 2 ({note})"
                         if markdown else "Đã xử lý xong tài liệu"
                     ),
-                    error_message="",
+                    error_message=error_message,
                     processed_at=datetime.now().isoformat(),
                 )
 

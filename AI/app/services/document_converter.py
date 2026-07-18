@@ -8,10 +8,7 @@ Pipeline:
 """
 
 import logging
-import json
 import re
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from openai import OpenAI
@@ -71,7 +68,7 @@ class DocumentConverter:
 
     def convert_document(self, file_path: str) -> dict[str, object]:
         """
-        Convert a document file to Markdown text.
+        Convert a document file to Markdown text, then chunk + embed it.
 
         Supports: PDF, DOCX, XLSX, PPTX, HTML, TXT, images, etc.
 
@@ -81,6 +78,20 @@ class DocumentConverter:
         Returns:
             Dict with normalized markdown text and chunk count.
         """
+        markdown = self._convert_to_raw_markdown(file_path)
+        return self._finalize_markdown(markdown, file_path)
+
+    def convert_to_markdown_only(self, file_path: str) -> str:
+        """Convert a document to structured Markdown without chunking/embedding.
+
+        Dùng cho các tác vụ đọc-một-lần (ví dụ trích xuất dataset từ file tạm)
+        không cần lưu vector, để tránh tốn lệnh gọi embedding không cần thiết.
+        """
+        markdown = self._convert_to_raw_markdown(file_path)
+        return structure_ocr_markdown(markdown)
+
+    def _convert_to_raw_markdown(self, file_path: str) -> str:
+        """Try MarkItDown (Vision LLM OCR), then plain-text fallback."""
         logger.info(f"Converting to Markdown: {file_path}")
 
         markitdown_error: Exception | None = None
@@ -92,23 +103,11 @@ class DocumentConverter:
                     len(markdown),
                     file_path,
                 )
-                return self._finalize_markdown(markdown, file_path)
+                return markdown
             logger.warning("MarkItDown returned empty Markdown for %s", file_path)
         except Exception as exc:
             markitdown_error = exc
             logger.error("MarkItDown conversion failed for %s: %s", file_path, exc)
-
-        try:
-            markdown = self._convert_with_paddleocr_service(file_path)
-            if markdown:
-                logger.info(
-                    "Converted to Markdown with paddleocr_fallback: %d chars from %s",
-                    len(markdown),
-                    file_path,
-                )
-                return self._finalize_markdown(markdown, file_path)
-        except Exception as exc:
-            logger.error("PaddleOCR fallback failed for %s: %s", file_path, exc)
 
         plain_text = self._read_plain_text_fallback(file_path)
         if plain_text:
@@ -117,7 +116,7 @@ class DocumentConverter:
                 len(plain_text),
                 file_path,
             )
-            return self._finalize_markdown(plain_text, file_path)
+            return plain_text
 
         if markitdown_error:
             raise ValueError(f"Cannot convert file to text: {file_path}") from markitdown_error
@@ -175,38 +174,6 @@ class DocumentConverter:
 
         # Nếu không có → trả toàn bộ nội dung
         return raw_markdown.strip() if raw_markdown else ""
-
-    def _convert_with_paddleocr_service(self, file_path: str) -> str:
-        url = settings.ocr_service_url.rstrip("/") + "/ocr/markdown"
-        payload = json.dumps({"file_path": file_path}).encode("utf-8")
-        request = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        try:
-            with urllib.request.urlopen(request, timeout=600) as response:
-                body = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"OCR service returned HTTP {exc.code}: {body}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Cannot connect OCR service at {url}: {exc}") from exc
-
-        try:
-            data = json.loads(body)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"OCR service returned invalid JSON: {body[:200]}") from exc
-
-        if not data.get("ok"):
-            raise RuntimeError(data.get("error") or "OCR service failed")
-
-        markdown = str(data.get("markdown") or "").strip()
-        if not markdown:
-            raise RuntimeError("OCR service returned empty Markdown")
-        return markdown
 
     def _read_plain_text_fallback(self, file_path: str) -> str:
         suffix = Path(file_path).suffix.lower()
