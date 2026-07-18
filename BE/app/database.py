@@ -18,6 +18,7 @@ from app.db_models import (
     Department,
     Document,
     DocumentChunk,
+    DocumentVersion,
     Organization,
     Repository,
     RepositoryCategory,
@@ -414,6 +415,51 @@ async def get_user_total_document_bytes(user_id: str) -> int:
 
 async def get_document_by_id(doc_id: str) -> Optional[dict]:
     return await _get(Document, doc_id)
+
+
+async def create_document_version(
+    document_id: str,
+    filename: str,
+    stored_path: str,
+    file_size: int,
+    file_type: str,
+    changed_by: str | None,
+    changed_by_name: str,
+    change_type: str,
+) -> dict:
+    async with SessionLocal.begin() as session:
+        latest_number = await session.scalar(
+            select(func.coalesce(func.max(DocumentVersion.version_number), 0))
+            .where(DocumentVersion.document_id == _uuid(document_id))
+        )
+        obj = DocumentVersion(
+            document_id=_uuid(document_id),
+            version_number=int(latest_number or 0) + 1,
+            filename=filename,
+            stored_path=stored_path,
+            file_size=file_size,
+            file_type=file_type,
+            changed_by=_uuid(changed_by),
+            changed_by_name=changed_by_name,
+            change_type=change_type,
+        )
+        session.add(obj)
+        await session.flush()
+        return _dict(obj)
+
+
+async def get_document_versions(document_id: str) -> list[dict]:
+    async with SessionLocal() as session:
+        rows = (await session.scalars(
+            select(DocumentVersion)
+            .where(DocumentVersion.document_id == _uuid(document_id))
+            .order_by(DocumentVersion.version_number.desc())
+        )).all()
+        return [_dict(row) for row in rows]
+
+
+async def get_document_version_by_id(version_id: str) -> Optional[dict]:
+    return await _get(DocumentVersion, version_id)
 
 
 async def update_document_source_id(doc_id: str, source_id: str) -> None:

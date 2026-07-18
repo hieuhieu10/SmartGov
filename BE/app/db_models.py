@@ -114,6 +114,25 @@ class Document(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
 
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    file_type: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    changed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    changed_by_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    change_type: Mapped[str] = mapped_column(String(50), default="edited", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -149,3 +168,4 @@ class ChatMessage(Base):
 Index("ix_chat_repo_user_created", ChatMessage.repository_id, ChatMessage.user_id, ChatMessage.created_at)
 Index("ix_document_chunks_doc_index", DocumentChunk.document_id, DocumentChunk.chunk_index, unique=True)
 Index("ix_documents_repo_uploaded", Document.repository_id, Document.uploaded_at)
+Index("ix_document_versions_doc_number", DocumentVersion.document_id, DocumentVersion.version_number, unique=True)

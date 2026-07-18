@@ -14,9 +14,10 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from app.auth import get_current_user, can_access_repo
 from app.config import settings
 from app import database as db
-from app.models import DocumentResponse
+from app.models import DocumentResponse, DocumentVersionResponse
 from app.services.ai_client import AIServiceError, ai_client, describe_conversion
 from app.services.docx_preview import render_docx_preview_html
+from app.services.document_version_diff import render_highlighted_docx
 from app.services.feedback_summary_service import feedback_summary_service
 from app.services.repository_service import repository_service
 
@@ -66,6 +67,21 @@ def _build_document_response(doc: dict) -> DocumentResponse:
         chunk_count=doc.get("chunk_count") or 0,
         processed_at=doc.get("processed_at"),
         uploaded_at=doc["uploaded_at"],
+    )
+
+
+def _build_version_response(version: dict, current_version_id: str = "") -> DocumentVersionResponse:
+    return DocumentVersionResponse(
+        id=version["id"],
+        document_id=version["document_id"],
+        version_number=version["version_number"],
+        filename=version["filename"],
+        file_size=version["file_size"],
+        file_type=version["file_type"],
+        changed_by_name=version.get("changed_by_name") or "Người dùng",
+        change_type=version.get("change_type") or "edited",
+        created_at=version["created_at"],
+        is_current=version["id"] == current_version_id,
     )
 
 
@@ -200,6 +216,162 @@ async def list_documents(
 
     docs = await db.get_documents_by_repository(repo_id)
     return [_build_document_response(d) for d in docs]
+
+
+@router.get("/{doc_id}/versions", response_model=list[DocumentVersionResponse])
+async def list_document_versions(
+    repo_id: str,
+    doc_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    repo = await can_access_repo(repo_id, current_user)
+    doc = await db.get_document_by_id(doc_id)
+    if not doc or doc.get("repository_id") != repo_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tài liệu không tồn tại")
+    if repo.get("is_owner"):
+        versions = await repository_service.ensure_document_history(doc, current_user)
+    else:
+        versions = await db.get_document_versions(doc_id)
+    current_version_id = versions[0]["id"] if versions else ""
+    return [_build_version_response(version, current_version_id) for version in versions]
+
+
+@router.get("/{doc_id}/versions/{version_id}/file")
+async def view_document_version_file(
+    repo_id: str,
+    doc_id: str,
+    version_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    await can_access_repo(repo_id, current_user)
+    doc = await db.get_document_by_id(doc_id)
+    version = await db.get_document_version_by_id(version_id)
+    if (
+        not doc
+        or doc.get("repository_id") != repo_id
+        or not version
+        or version.get("document_id") != doc_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phiên bản không tồn tại")
+    file_path = Path(version.get("stored_path") or "")
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file phiên bản")
+    media_type = version.get("file_type") or mimetypes.guess_type(version["filename"])[0]
+    return FileResponse(
+        path=file_path,
+        media_type=media_type or "application/octet-stream",
+        filename=version["filename"],
+        content_disposition_type="inline",
+    )
+
+
+@router.get("/{doc_id}/versions/{version_id}/diff-file")
+async def view_document_version_diff_file(
+    repo_id: str,
+    doc_id: str,
+    version_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    await can_access_repo(repo_id, current_user)
+    doc = await db.get_document_by_id(doc_id)
+    version = await db.get_document_version_by_id(version_id)
+    if (
+        not doc
+        or doc.get("repository_id") != repo_id
+        or not version
+        or version.get("document_id") != doc_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phiên bản không tồn tại")
+    if Path(version["filename"]).suffix.lower() != ".docx":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chỉ hỗ trợ làm nổi bật thay đổi cho file DOCX",
+        )
+
+    versions = await db.get_document_versions(doc_id)
+    previous_version = next(
+        (
+            item
+            for item in versions
+            if item["version_number"] == version["version_number"] - 1
+        ),
+        None,
+    )
+    current_path = Path(version.get("stored_path") or "")
+    previous_path = (
+        Path(previous_version.get("stored_path") or "")
+        if previous_version
+        else None
+    )
+    if not current_path.exists() or (previous_path and not previous_path.exists()):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file phiên bản")
+
+    try:
+        content = render_highlighted_docx(current_path, previous_path)
+    except Exception as exc:
+        logger.exception("Could not render highlighted document version")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Không thể tạo bản làm nổi bật thay đổi",
+        ) from exc
+
+    encoded_filename = quote(version["filename"])
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@router.post("/{doc_id}/versions/{version_id}/restore", response_model=DocumentResponse)
+async def restore_document_version(
+    repo_id: str,
+    doc_id: str,
+    version_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
+    repo = await can_access_repo(repo_id, current_user)
+    if not repo.get("is_owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ sở hữu kho mới có quyền khôi phục tài liệu",
+        )
+    doc = await db.get_document_by_id(doc_id)
+    version = await db.get_document_version_by_id(version_id)
+    if (
+        not doc
+        or doc.get("repository_id") != repo_id
+        or not version
+        or version.get("document_id") != doc_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phiên bản không tồn tại")
+    source_path = Path(version.get("stored_path") or "")
+    if not source_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file phiên bản")
+    try:
+        updated = await repository_service.replace_document_file(
+            repo_id=repo_id,
+            doc_id=doc_id,
+            user_id=current_user["id"],
+            filename=version["filename"],
+            content=source_path.read_bytes(),
+            file_type=version.get("file_type") or "",
+            current_user=current_user,
+            version_change_type="restored",
+        )
+        background_tasks.add_task(
+            repository_service.process_document,
+            repo_id,
+            doc_id,
+            current_user["id"],
+            current_user,
+        )
+        return _build_document_response(updated)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
 
 @router.put("/{doc_id}", response_model=DocumentResponse)
