@@ -552,6 +552,8 @@ async def search_document_chunks_hybrid(
     limit: int = 8,
     vector_candidates: int = 30,
     text_candidates: int = 30,
+    vector_weight: float = 0.6,
+    text_weight: float = 1.4,
 ) -> list[dict]:
     if not query_embedding:
         return []
@@ -625,8 +627,8 @@ async def search_document_chunks_hybrid(
                 coalesce(v.metadata, t.metadata) AS metadata,
                 v.vector_distance,
                 t.text_rank_score,
-                (coalesce(1.0 / (60 + v.vector_rank), 0.0) +
-                 coalesce(1.0 / (60 + t.text_rank), 0.0)) AS hybrid_score
+                (:vector_weight * coalesce(1.0 / (60 + v.vector_rank), 0.0) +
+                 :text_weight * coalesce(1.0 / (60 + t.text_rank), 0.0)) AS hybrid_score
             FROM vector_matches v
             FULL OUTER JOIN text_matches t ON t.id = v.id
         )
@@ -643,6 +645,8 @@ async def search_document_chunks_hybrid(
         "limit": int(limit),
         "vector_candidates": int(vector_candidates),
         "text_candidates": int(text_candidates),
+        "vector_weight": float(vector_weight),
+        "text_weight": float(text_weight),
     }
     async with SessionLocal() as session:
         rows = (await session.execute(sql, params)).mappings().all()

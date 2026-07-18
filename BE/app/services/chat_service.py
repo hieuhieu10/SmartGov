@@ -78,6 +78,8 @@ class ChatService:
                 limit=settings.rag_top_k,
                 vector_candidates=settings.rag_vector_candidates,
                 text_candidates=settings.rag_text_candidates,
+                vector_weight=settings.rag_vector_weight,
+                text_weight=settings.rag_text_weight,
             )
             if not contexts:
                 return ""
