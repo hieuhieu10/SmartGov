@@ -15,6 +15,21 @@ services:
       timeout: 5s
       retries: 10
 
+  embedding:
+    build: ./embedding
+    image: smartgov-dev-embedding:latest
+    container_name: officeai-embedding
+    restart: unless-stopped
+    ports:
+      - "7997:7997"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   ai:
     build: ./AI
     container_name: officeai-ai
@@ -35,6 +50,13 @@ services:
       VLLM_FALLBACK_BASE_URL: ${VLLM_FALLBACK_BASE_URL:-}
       VLLM_FALLBACK_MODEL_NAME: ${VLLM_FALLBACK_MODEL_NAME:-}
       VLLM_FALLBACK_API_KEY: ${VLLM_FALLBACK_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-}
+      EMBEDDING_CHUNK_SIZE: ${EMBEDDING_CHUNK_SIZE:-}
+      EMBEDDING_MAX_CHARS: ${EMBEDDING_MAX_CHARS:-}
     env_file:
       - path: ./AI/.env
         required: false

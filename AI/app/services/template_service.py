@@ -1,9 +1,4 @@
-"""
-Template Service — Extract headings from uploaded files, generate NĐ 30 documents.
-
-Dual-engine support:
-  - NotebookLM: Upload to temp notebook → extract/generate via chat API
-  - Self-hosted: Convert to markdown → extract via vLLM → generate with RAG context
+"""Template Service — extract headings and generate NĐ 30 documents.
 
 Flow:
 1. User uploads a file (docx/pdf/img)
@@ -15,9 +10,7 @@ Flow:
 import json
 import logging
 import re
-import asyncio
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from docx import Document
@@ -132,8 +125,6 @@ class TemplateService:
         """
         Extract main headings from an uploaded file.
 
-        Routes to NotebookLM or self-hosted engine based on config.
-
         Returns: {
             doc_type: str,
             doc_type_label: str,
@@ -141,42 +132,7 @@ class TemplateService:
             headings: [{key, title, description, required}]
         }
         """
-        if settings.is_self_hosted:
-            return await self._extract_headings_self_hosted(file_path)
-        else:
-            return await self._extract_headings_notebooklm(file_path)
-
-    async def _extract_headings_notebooklm(self, file_path: str) -> dict:
-        """Extract headings using NotebookLM temp notebook."""
-        from app.services.notebooklm_service import notebooklm_service
-
-        logger.info(f"[NotebookLM] Extracting headings from: {file_path}")
-
-        notebook_id = None
-        try:
-            notebook_id = await notebooklm_service.create_notebook(
-                f"Template: {Path(file_path).stem}"
-            )
-            logger.info(f"Created temp notebook {notebook_id}")
-
-            await notebooklm_service.upload_source(notebook_id, file_path)
-            logger.info(f"Uploaded source to notebook {notebook_id}")
-
-            # Wait for NotebookLM to process
-            await asyncio.sleep(5)
-
-            raw = await notebooklm_service.chat_ask(notebook_id, EXTRACT_HEADINGS_PROMPT)
-            logger.info(f"Extraction response: {len(raw)} chars")
-
-            return self._parse_heading_result(raw)
-
-        finally:
-            if notebook_id:
-                try:
-                    await notebooklm_service.delete_notebook(notebook_id)
-                    logger.info(f"Deleted temp notebook {notebook_id}")
-                except Exception as e:
-                    logger.warning(f"Could not delete temp notebook: {e}")
+        return await self._extract_headings_self_hosted(file_path)
 
     async def _extract_headings_self_hosted(self, file_path: str) -> dict:
         """
@@ -272,7 +228,6 @@ class TemplateService:
     async def generate_from_headings(
         self,
         headings: list[dict],
-        notebook_id: str,
         doc_type_label: str,
         trich_yeu: str,
         user_input: dict,
@@ -282,76 +237,12 @@ class TemplateService:
         """
         Generate content for each heading.
 
-        Routes to NotebookLM or self-hosted engine based on config.
+        Generate only from the internal document pipeline.
         """
-        if settings.is_self_hosted:
-            return await self._generate_self_hosted(
-                headings, doc_type_label, trich_yeu, user_input, repo_id,
-                selected_document_ids=selected_document_ids or [],
-            )
-        else:
-            source_filter = await self._build_source_filter(selected_document_ids or [])
-            return await self._generate_notebooklm(
-                headings, notebook_id, doc_type_label, trich_yeu, user_input,
-                source_filter=source_filter,
-            )
-
-    async def _generate_notebooklm(
-        self,
-        headings: list[dict],
-        notebook_id: str,
-        doc_type_label: str,
-        trich_yeu: str,
-        user_input: dict,
-        source_filter: str = "",
-    ) -> dict:
-        """Generate heading content using NotebookLM."""
-        from app.services.notebooklm_service import notebooklm_service
-
-        result = {}
-        for heading in headings:
-            key = heading.get("key", "")
-            title = heading.get("title", "")
-            description = heading.get("description", "")
-
-            if not key:
-                continue
-
-            # Check if user provided content for this heading
-            user_val = user_input.get(key, "")
-            if user_val and len(user_val.strip()) > 30:
-                result[key] = user_val.strip()
-                logger.info(f"Heading '{key}': using user-provided content")
-                continue
-
-            user_hint_section = ""
-            if user_val:
-                user_hint_section = f"GỢI Ý TỪ NGƯỜI DÙNG: {user_val}"
-            if source_filter:
-                user_hint_section = f"{source_filter}\n\n{user_hint_section}".strip()
-
-            prompt = GENERATE_HEADING_CONTENT_PROMPT.format(
-                doc_type_label=doc_type_label,
-                heading_title=title,
-                heading_description=description,
-                trich_yeu=trich_yeu,
-                user_hint_section=user_hint_section,
-                context_section="",
-            )
-
-            try:
-                content = await notebooklm_service.chat_ask(notebook_id, prompt)
-                content = content.strip()
-                if content.startswith(title):
-                    content = content[len(title):].lstrip(".:- ").strip()
-                content = self._clean_content(content)
-                result[key] = content
-                logger.info(f"Heading '{key}': generated {len(content)} chars")
-            except Exception as e:
-                logger.error(f"Failed to generate content for heading '{key}': {e}")
-                result[key] = f"[Nội dung chưa sinh được cho mục: {title}]"
-
-        return result
+        return await self._generate_self_hosted(
+            headings, doc_type_label, trich_yeu, user_input, repo_id,
+            selected_document_ids=selected_document_ids or [],
+        )
 
     async def _build_source_filter(self, selected_document_ids: list[str]) -> str:
         if not selected_document_ids:

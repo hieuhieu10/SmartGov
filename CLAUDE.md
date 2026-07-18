@@ -6,7 +6,7 @@ Repo có ba service:
 
 - `FE/`: React + Nginx.
 - `BE/`: FastAPI public, auth/RBAC, PostgreSQL, task/file và Word export.
-- `AI/`: FastAPI internal cho NotebookLM, vLLM, MarkItDown và agents.
+- `AI/`: FastAPI internal cho vLLM, MarkItDown và agents.
 
 Luồng dữ liệu là `FE -> BE -> PostgreSQL` và `BE -> AI`. Chỉ BE truy cập
 database; AI nhận dữ liệu đã được BE kiểm quyền. Database dùng PostgreSQL 16,

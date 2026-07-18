@@ -21,8 +21,8 @@ class ChatService:
         RAG-only: chat luôn thử trả lời bằng RAG (pgvector + hybrid search)
         trước; nếu RAG không có gì để trả lời (kho chưa có vector, hoặc không
         tìm thấy nội dung liên quan), fallback sang self-hosted DocumentScanner
-        — luồng chat KHÔNG còn phụ thuộc NotebookLM (cần session Google đăng
-        nhập qua browser), nên không còn bị lỗi 500 khi NotebookLM chưa login.
+        — luồng chat dùng RAG trước, sau đó mới quét markdown của các tài liệu
+        đã được BE cấp quyền.
         """
         await db.add_chat_message(repo_id, user_id, "user", question)
         try:
