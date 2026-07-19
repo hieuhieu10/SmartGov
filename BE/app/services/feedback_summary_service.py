@@ -13,6 +13,7 @@ Luồng:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,8 @@ from docx.shared import Cm, Pt
 from app import database as db
 from app.config import settings
 from app.services.ai_client import ai_client
+from app.services.draft_docx_updater import update_revised_draft_docx
+from app.services.nghi_dinh_30_renderer import render_revised_draft
 from app.services.repository_service import repository_service
 
 logger = logging.getLogger(__name__)
@@ -32,6 +35,7 @@ logger = logging.getLogger(__name__)
 DRAFT_FOLDER = "draft"
 FEEDBACK_FOLDER = "feedback"
 SUMMARY_FOLDER = "summary"
+FINAL_FOLDER = "final"
 
 QUOC_HIEU = "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"
 TIEU_NGU = "Độc lập - Tự do - Hạnh phúc"
@@ -44,6 +48,11 @@ TABLE_HEADERS = [
     "NỘI DUNG TIẾP THU, GIẢI TRÌNH",
 ]
 ROW_KEYS = ["nhom_van_de", "chu_the_gop_y", "noi_dung_gop_y", "noi_dung_tiep_thu_giai_trinh"]
+
+
+def _referenced_articles(markdown: str) -> list[str]:
+    """Lấy các Điều được nêu rõ trong bảng tổng hợp để kiểm tra tài liệu nguồn."""
+    return sorted(set(re.findall(r"\bđiều\s+(\d+)\b", markdown, flags=re.IGNORECASE)), key=int)
 
 
 def _add_line(cell_or_doc, text: str, *, bold=False, italic=False, size=13,
@@ -220,6 +229,125 @@ def _render_docx(summary: dict, output_path: str) -> None:
     doc.save(output_path)
 
 
+_MARKDOWN_TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
+_MARKDOWN_INLINE = re.compile(r"(\*\*.+?\*\*|__.+?__|`.+?`|(?<!\*)\*[^*]+?\*(?!\*)|(?<!_)_[^_]+?_(?!_))")
+
+
+def _markdown_table_cells(line: str) -> list[str]:
+    """Tách một hàng bảng Markdown, bỏ hai ký tự | ở biên nếu có."""
+    text = line.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|"):
+        text = text[:-1]
+    return [cell.strip().replace(r"\|", "|") for cell in text.split("|")]
+
+
+def _is_markdown_table_separator(line: str) -> bool:
+    cells = _markdown_table_cells(line)
+    return bool(cells) and all(_MARKDOWN_TABLE_SEPARATOR.fullmatch(cell) for cell in cells)
+
+
+def _add_markdown_runs(paragraph, text: str, *, size: int = 13) -> None:
+    """Ghi Markdown inline cơ bản vào paragraph Word, không để lộ dấu **/*."""
+    cursor = 0
+    for match in _MARKDOWN_INLINE.finditer(text):
+        if match.start() > cursor:
+            run = paragraph.add_run(text[cursor:match.start()])
+            run.font.name = "Times New Roman"
+            run.font.size = Pt(size)
+        token = match.group(0)
+        if token.startswith(("**", "__")):
+            value, bold, italic = token[2:-2], True, False
+        elif token.startswith("`"):
+            value, bold, italic = token[1:-1], False, False
+        else:
+            value, bold, italic = token[1:-1], False, True
+        run = paragraph.add_run(value)
+        run.bold = bold
+        run.italic = italic
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(size)
+        cursor = match.end()
+    if cursor < len(text):
+        run = paragraph.add_run(text[cursor:])
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(size)
+
+
+def _add_revised_paragraph(doc, text: str, *, bold: bool = False, size: int = 13,
+                           align=WD_ALIGN_PARAGRAPH.JUSTIFY) -> None:
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = align
+    paragraph.paragraph_format.space_after = Pt(6)
+    _add_markdown_runs(paragraph, text, size=size)
+    for run in paragraph.runs:
+        if bold:
+            run.bold = True
+
+
+def _render_revised_table(doc: DocxDocument, headers: list[str], rows: list[list[str]]) -> None:
+    """Render bảng Markdown thành bảng Word như phần bảng tổng hợp ở bước 3."""
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.style = "Table Grid"
+    for cell, header in zip(table.rows[0].cells, headers):
+        cell.text = ""
+        _add_line(cell, header, bold=True, size=12)
+
+    for values in rows:
+        cells = table.add_row().cells
+        for index, cell in enumerate(cells):
+            cell.text = ""
+            value = values[index] if index < len(values) else ""
+            align = WD_ALIGN_PARAGRAPH.CENTER if index == 0 else WD_ALIGN_PARAGRAPH.LEFT
+            paragraph = _add_line(cell, "", size=12, align=align)
+            _add_markdown_runs(paragraph, value, size=12)
+    doc.add_paragraph()
+
+
+def _render_revised_draft_docx(markdown: str, output_path: str) -> None:
+    """Xuất DOCX dự thảo với tiêu đề, đoạn và bảng Word thay vì văn bản Markdown thô."""
+    doc = DocxDocument()
+    section = doc.sections[0]
+    section.left_margin = section.right_margin = Cm(2.5)
+    section.top_margin = section.bottom_margin = Cm(2)
+    style = doc.styles["Normal"]
+    style.font.name = "Times New Roman"
+    style.font.size = Pt(13)
+
+    lines = markdown.splitlines()
+    index = 0
+    while index < len(lines):
+        text = lines[index].strip()
+        if not text:
+            index += 1
+            continue
+
+        # Một bảng Markdown gồm hàng tiêu đề và hàng phân cách ---.
+        if text.startswith("|") and index + 1 < len(lines) and _is_markdown_table_separator(lines[index + 1]):
+            headers = _markdown_table_cells(text)
+            index += 2
+            rows: list[list[str]] = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                rows.append(_markdown_table_cells(lines[index]))
+                index += 1
+            _render_revised_table(doc, headers, rows)
+            continue
+
+        if text.startswith("### "):
+            _add_revised_paragraph(doc, text[4:], bold=True, size=13, align=WD_ALIGN_PARAGRAPH.LEFT)
+        elif text.startswith("## "):
+            _add_revised_paragraph(doc, text[3:], bold=True, size=14, align=WD_ALIGN_PARAGRAPH.CENTER)
+        elif text.startswith("# "):
+            _add_revised_paragraph(doc, text[2:], bold=True, size=14, align=WD_ALIGN_PARAGRAPH.CENTER)
+        elif text.startswith(("- ", "* ")):
+            _add_revised_paragraph(doc, text[2:], size=13, align=WD_ALIGN_PARAGRAPH.LEFT)
+        else:
+            _add_revised_paragraph(doc, text, size=13)
+        index += 1
+    doc.save(output_path)
+
+
 def _build_markdown(summary: dict) -> str:
     """Bản Markdown để lưu markdown_content (phục vụ preview/chỉnh sửa)."""
     metadata = summary.get("metadata") or {}
@@ -350,6 +478,88 @@ class FeedbackSummaryService:
             processed_at=datetime.now(),
         )
         logger.info("Created feedback summary %s for repo %s", doc_id, repo_id)
+        return doc
+
+    async def revise_draft(
+        self, repo_id: str, user_id: str, draft_document_id: str, summary_document_id: str,
+    ) -> dict:
+        """Tạo bản dự thảo hoàn thiện mới từ dự thảo gốc và bảng tổng hợp."""
+        await repository_service.verify_ownership(repo_id, user_id)
+        documents = await db.get_documents_by_repository(repo_id)
+        documents_by_id = {doc["id"]: doc for doc in documents}
+        draft_doc = documents_by_id.get(draft_document_id)
+        summary_doc = documents_by_id.get(summary_document_id)
+        if not draft_doc or (draft_doc.get("folder_key") or DRAFT_FOLDER) != DRAFT_FOLDER:
+            raise ValueError("Bản dự thảo đã chọn không thuộc kho hoặc không phải bản dự thảo")
+        if not summary_doc or summary_doc.get("folder_key") != SUMMARY_FOLDER:
+            raise ValueError("Bảng tổng hợp đã chọn không thuộc kho")
+
+        rows = await db.get_documents_markdown_by_repository(
+            repo_id, [draft_document_id, summary_document_id]
+        )
+        content_by_id = {row["id"]: row for row in rows}
+        draft_source = content_by_id.get(draft_document_id) or {}
+        summary_source = content_by_id.get(summary_document_id) or {}
+        draft_markdown = str(draft_source.get("markdown_content") or "")
+        summary_markdown = str(summary_source.get("markdown_content") or "")
+        referenced_articles = _referenced_articles(summary_markdown)
+        missing_articles = [
+            article for article in referenced_articles
+            if not re.search(rf"\bđiều\s+{re.escape(article)}\b", draft_markdown, re.IGNORECASE)
+        ]
+        if missing_articles:
+            raise ValueError(
+                "Bản dự thảo đã chọn không chứa "
+                f"Điều {', '.join(missing_articles)} được nêu trong bảng góp ý. "
+                "Hãy chọn hoặc tải lên bản dự thảo đầy đủ cần hoàn thiện, không chọn công văn góp ý/chủ trương."
+            )
+        revised_markdown = await ai_client.revise_draft_from_summary(
+            repo_id,
+            {"filename": draft_doc["filename"], "markdown_content": draft_markdown},
+            {"filename": summary_doc["filename"], "markdown_content": summary_markdown},
+        )
+        if not revised_markdown.strip():
+            raise ValueError("AI không trả về bản dự thảo đã cập nhật")
+
+        doc_id = str(uuid.uuid4())
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        filename = f"Dự thảo hoàn thiện {timestamp}.docx"
+        repo_dir = Path(settings.repo_files_dir) / repo_id
+        repo_dir.mkdir(parents=True, exist_ok=True)
+        stored_path = str(repo_dir / f"{doc_id}_{filename}")
+        # Ưu tiên sao chép và vá trực tiếp DOCX gốc theo từng Điều: cách này giữ
+        # nguyên hoàn toàn thể thức, bảng, header/footer, chữ ký và định dạng run.
+        # Mẫu Nghị định 30 chỉ là phương án cho đầu vào không phải DOCX.
+        if Path(draft_doc["stored_path"]).suffix.casefold() == ".docx":
+            update_result = update_revised_draft_docx(
+                draft_doc["stored_path"], revised_markdown, stored_path,
+            )
+            logger.info(
+                "Updated draft DOCX in place: %s/%s articles changed",
+                update_result["updated_articles"], update_result["matched_articles"],
+            )
+        else:
+            render_revised_draft(
+                revised_markdown,
+                draft_doc["stored_path"],
+                stored_path,
+                fallback_title=Path(draft_doc["filename"]).stem,
+            )
+        file_size = Path(stored_path).stat().st_size
+        doc = await db.create_document(
+            repository_id=repo_id,
+            filename=filename,
+            stored_path=stored_path,
+            file_size=file_size,
+            file_type="docx",
+            folder_key=FINAL_FOLDER,
+            doc_id=doc_id,
+            markdown_content=revised_markdown,
+            processing_status="completed",
+            progress_message="",
+            processed_at=datetime.now(),
+        )
+        logger.info("Created revised draft %s from draft %s", doc_id, draft_document_id)
         return doc
 
 

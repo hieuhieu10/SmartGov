@@ -304,6 +304,12 @@ export const ApiClient = {
       feedback_repository_id: feedbackRepoId,
     }).then(r => r.data),
 
+  reviseDrafting: (draftRepoId: string, draftDocumentId: string, summaryDocumentId: string) =>
+    api.post<Document>(`/repositories/${draftRepoId}/documents/consolidate/revise`, {
+      draft_document_id: draftDocumentId,
+      summary_document_id: summaryDocumentId,
+    }).then(r => r.data),
+
   getDocumentPreview: (repoId: string, docId: string) =>
     api.get(`/repositories/${repoId}/documents/${docId}/preview`, { responseType: 'text' }).then(r => r.data),
 
