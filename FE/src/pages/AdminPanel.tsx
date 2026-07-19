@@ -214,12 +214,12 @@ export function AdminPanel() {
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl w-fit">
+      <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-slate-100 p-1">
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+            className={`flex shrink-0 items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all ${
               activeTab === t.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -411,7 +411,7 @@ export function AdminPanel() {
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
               className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
               <h3 className="font-bold text-slate-800">{editingUserId ? 'Sửa' : 'Thêm'} tài khoản</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {!editingUserId && (
                   <input value={userForm.username} onChange={e => setUserForm({ ...userForm, username: e.target.value })}
                     placeholder="Tên đăng nhập" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
@@ -451,8 +451,9 @@ export function AdminPanel() {
           )}
 
           {/* User list */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <table className="w-full">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px]">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Tài khoản</th>
@@ -500,6 +501,7 @@ export function AdminPanel() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           {users.length === 0 && (

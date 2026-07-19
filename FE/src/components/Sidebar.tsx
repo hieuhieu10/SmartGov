@@ -20,9 +20,11 @@ import { getStoredUser, clearAuth, ApiClient } from '../api/client';
 
 interface SidebarProps {
   onLogout: () => void;
+  isMobileOpen?: boolean;
+  onClose?: () => void;
 }
 
-export function Sidebar({ onLogout }: SidebarProps) {
+export function Sidebar({ onLogout, isMobileOpen = false, onClose }: SidebarProps) {
   const user = getStoredUser();
   const isAdmin = user?.role === 'system_admin' || user?.role === 'org_admin';
 
@@ -78,10 +80,19 @@ export function Sidebar({ onLogout }: SidebarProps) {
   return (
     <div
       className={clsx(
-        "h-screen bg-slate-900 border-r border-slate-800 flex flex-col items-start py-6 text-slate-300 transition-all duration-300 ease-out shrink-0",
-        isCollapsed ? "w-20 px-3" : "w-64 px-4"
+        "fixed inset-y-0 left-0 z-50 flex h-screen w-72 -translate-x-full flex-col items-start border-r border-slate-800 bg-slate-900 px-4 py-6 text-slate-300 shadow-2xl transition-all duration-300 ease-out md:static md:z-auto md:translate-x-0 md:shadow-none",
+        isMobileOpen && "translate-x-0",
+        isCollapsed ? "md:w-20 md:px-3" : "md:w-64 md:px-4"
       )}
     >
+      <button
+        type="button"
+        aria-label="Đóng menu"
+        onClick={onClose}
+        className="absolute right-3 top-3 rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white md:hidden"
+      >
+        <X size={20} />
+      </button>
       <div
         className={clsx(
           "flex items-center gap-3 mb-10 w-full",
@@ -104,6 +115,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={onClose}
             className={({ isActive }) =>
               clsx(
                 "relative flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-300 ease-out group font-medium",
@@ -139,6 +151,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
             </div>
             <NavLink
               to="/admin"
+              onClick={onClose}
               className={({ isActive }) =>
                 clsx(
                   "relative flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-300 ease-out group font-medium",
@@ -205,7 +218,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
         <button
           onClick={() => setIsCollapsed((current) => !current)}
           className={clsx(
-            "flex items-center gap-3 px-3 py-3 w-full rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-sm font-medium",
+            "hidden w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-white md:flex",
             isCollapsed && "justify-center"
           )}
           title={isCollapsed ? "Mở rộng menu" : "Thu gọn menu"}

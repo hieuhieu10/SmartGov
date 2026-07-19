@@ -120,6 +120,20 @@ class AIClient:
         )
         return data.get("summary") or {}
 
+    async def revise_draft_from_summary(
+        self, repo_id: str, draft_document: dict, summary_document: dict,
+    ) -> str:
+        data = await self.request(
+            "/internal/summary/revise-draft",
+            repo_id=repo_id,
+            engine="self_hosted",
+            input_data={
+                "draft_document": draft_document,
+                "summary_document": summary_document,
+            },
+        )
+        return str(data.get("markdown_content") or "")
+
     async def convert_and_store(self, doc_id: str, file_path: str) -> tuple[str, int]:
         data = await self.request(
             "/internal/documents/convert", input_data={"stored_path": file_path}

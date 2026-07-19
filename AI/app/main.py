@@ -207,6 +207,14 @@ async def consolidate_feedback(payload: Envelope) -> dict:
     return ok({"summary": summary})
 
 
+@app.post("/internal/summary/revise-draft", dependencies=[Depends(require_internal_token)])
+async def revise_draft_from_summary(payload: Envelope) -> dict:
+    draft_document = payload.input_data.get("draft_document") or {}
+    summary_document = payload.input_data.get("summary_document") or {}
+    revised_markdown = await summary_service.revise_draft(draft_document, summary_document)
+    return ok({"markdown_content": revised_markdown})
+
+
 @app.post("/internal/draft/generate", dependencies=[Depends(require_internal_token)])
 async def generate_draft(payload: Envelope) -> dict:
     data = payload.input_data
