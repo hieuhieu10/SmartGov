@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 # Giới hạn ký tự mỗi văn bản để tránh vượt context window.
 _MAX_CHARS_PER_FEEDBACK = 8000
 _MAX_CHARS_PER_DRAFT = 4000
+_MAX_CHARS_PER_REVISED_DRAFT = 160000
+_MAX_CHARS_PER_SUMMARY = 120000
 # Số batch map chạy song song tối đa (bảo vệ model chính đơn luồng).
 _MAP_CONCURRENCY = 4
 
@@ -109,6 +111,30 @@ CÁC VĂN BẢN GÓP Ý:
 {feedback}
 """
 
+_REVISE_DRAFT_SYSTEM = """Bạn là chuyên viên soạn thảo văn bản hành chính Việt Nam.
+Nhiệm vụ của bạn là cập nhật BẢN DỰ THẢO theo các nội dung tiếp thu trong BẢNG
+TỔNG HỢP Ý KIẾN. Chỉ trả về toàn văn bản dự thảo đã hoàn thiện bằng Markdown,
+không giải thích quá trình xử lý, không dùng rào ``` và không dùng thẻ <think>.
+Giữ nguyên thể thức, tiêu đề, bố cục và nội dung không liên quan. Chỉ áp dụng
+các góp ý có hướng tiếp thu; với nội dung "Đề xuất giữ nguyên" thì giữ nguyên
+dự thảo. Không tự bổ sung thông tin không có căn cứ. /no_think"""
+
+_REVISE_DRAFT_USER = """\
+Cập nhật toàn bộ BẢN DỰ THẢO dưới đây dựa trên BẢNG TỔNG HỢP Ý KIẾN.
+
+YÊU CẦU:
+- Trả lại ĐẦY ĐỦ toàn văn bản dự thảo sau khi cập nhật, không chỉ liệt kê thay đổi.
+- Áp dụng các dòng có "NỘI DUNG TIẾP THU, GIẢI TRÌNH" thể hiện tiếp thu/bổ sung/điều chỉnh.
+- Không sửa các nội dung có hướng "Đề xuất giữ nguyên theo dự thảo".
+- Nếu bảng không đủ căn cứ để sửa một đoạn cụ thể, giữ nguyên đoạn đó.
+
+BẢN DỰ THẢO:
+{draft}
+
+BẢNG TỔNG HỢP Ý KIẾN:
+{summary}
+"""
+
 _ROW_KEYS = ("nhom_van_de", "chu_the_gop_y", "noi_dung_gop_y", "noi_dung_tiep_thu_giai_trinh")
 
 
@@ -126,6 +152,26 @@ def _extract_json(text: str) -> dict:
         if start != -1 and end != -1:
             text = text[start : end + 1]
     return json.loads(text)
+
+
+def _has_json_object(text: str) -> bool:
+    """Xác nhận model trả JSON dùng được trước khi chấp nhận kết quả chính."""
+    try:
+        return isinstance(_extract_json(text), dict)
+    except (ValueError, json.JSONDecodeError):
+        return False
+
+
+def _has_map_result(text: str) -> bool:
+    """Batch góp ý phải có đúng hai trường mảng, kể cả khi chúng rỗng."""
+    try:
+        data = _extract_json(text)
+    except (ValueError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and (
+        isinstance(data.get("rows"), list)
+        or isinstance(data.get("don_vi_thong_nhat"), list)
+    )
 
 
 def _doc_block(doc: dict, limit: int, label: str, index: int) -> str | None:
@@ -196,6 +242,28 @@ class SummaryService:
             raise ValueError("Bảng tổng hợp không có nội dung góp ý nào")
         return result
 
+    async def revise_draft(self, draft_document: dict, summary_document: dict) -> str:
+        """Hoàn thiện toàn văn dự thảo theo bảng tổng hợp ý kiến đã được duyệt."""
+        draft = (draft_document.get("markdown_content") or "").strip()
+        summary = (summary_document.get("markdown_content") or "").strip()
+        if not draft:
+            raise ValueError("Bản dự thảo chưa có nội dung để cập nhật")
+        if not summary:
+            raise ValueError("Bảng tổng hợp chưa có nội dung để áp dụng")
+        if len(draft) > _MAX_CHARS_PER_REVISED_DRAFT:
+            draft = draft[:_MAX_CHARS_PER_REVISED_DRAFT] + "\n\n...(phần còn lại giữ nguyên theo bản gốc)"
+        if len(summary) > _MAX_CHARS_PER_SUMMARY:
+            summary = summary[:_MAX_CHARS_PER_SUMMARY]
+        revised = await llm_service.chat(
+            _REVISE_DRAFT_SYSTEM,
+            _REVISE_DRAFT_USER.format(draft=draft, summary=summary),
+            temperature=0.1,
+            max_tokens=16384,
+        )
+        if not revised.strip():
+            raise ValueError("AI không trả về bản dự thảo đã cập nhật")
+        return revised.strip()
+
     async def _extract_metadata(self, draft_documents: list[dict]) -> dict:
         blocks = [
             b for i, d in enumerate(draft_documents, start=1)
@@ -208,7 +276,10 @@ class SummaryService:
             draft="\n\n".join(blocks),
         )
         try:
-            raw = await llm_service.chat(_SYSTEM_PROMPT, user, temperature=0.1, max_tokens=1024)
+            raw = await llm_service.chat(
+                _SYSTEM_PROMPT, user, temperature=0.1, max_tokens=1024,
+                response_validator=_has_json_object,
+            )
             data = _extract_json(raw)
         except Exception as exc:  # noqa: BLE001 - metadata là phụ, lỗi thì để trống
             logger.warning("Không trích được metadata từ dự thảo: %s", exc)
@@ -222,7 +293,10 @@ class SummaryService:
             feedback="\n\n".join(blocks),
         )
         try:
-            raw = await llm_service.chat(_SYSTEM_PROMPT, user, temperature=0.1, max_tokens=8192)
+            raw = await llm_service.chat(
+                _SYSTEM_PROMPT, user, temperature=0.1, max_tokens=8192,
+                response_validator=_has_map_result,
+            )
             data = _extract_json(raw)
         except (ValueError, json.JSONDecodeError) as exc:
             logger.warning("Batch %d/%d parse lỗi, bỏ qua: %s", idx, total, exc)

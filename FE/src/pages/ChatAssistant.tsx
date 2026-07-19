@@ -126,28 +126,30 @@ export function ChatAssistant() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm max-w-5xl mx-auto">
+    <div className="flex h-[calc(100dvh-8rem)] rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm max-w-5xl mx-auto md:h-[calc(100vh-3rem)]">
       <div className="flex-1 flex flex-col bg-slate-50 relative">
         {/* Header */}
-        <div className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur flex items-center px-6 gap-3">
-          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-            <Bot size={18} />
-          </div>
-          <div className="flex-1">
-            <h2 className="font-bold text-slate-800">Trợ lý Ơi</h2>
-            <p className="text-xs text-slate-500">
-              {selectedRepo ? `Kho: ${selectedRepo.name}` : 'Vui lòng chọn kho dữ liệu'}
-            </p>
+        <div className="relative flex flex-col gap-4 border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur md:h-16 md:flex-row md:items-center md:gap-3 md:px-6 md:py-0">
+          <div className="flex w-full items-center gap-3 md:flex-1">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+              <Bot size={18} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-bold text-slate-800">Trợ lý Ơi</h2>
+              <p className="truncate text-xs text-slate-500">
+                {selectedRepo ? `Kho: ${selectedRepo.name}` : 'Vui lòng chọn kho dữ liệu'}
+              </p>
+            </div>
           </div>
 
           {/* Category + repo selectors */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
+          <div className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto">
+            <div className="relative w-full md:w-auto">
               <Folder size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <select
                 value={selectedCategoryId}
                 onChange={(e) => handleCategoryChange(e.target.value)}
-                className="w-44 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 md:w-44"
               >
                 <option value="">Tất cả danh mục</option>
                 {categories.map(category => (
@@ -158,12 +160,12 @@ export function ChatAssistant() {
                 <option value="__uncategorized">Chưa phân loại</option>
               </select>
             </div>
-            <div className="relative">
+            <div className="relative w-full md:w-auto">
               <Database size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
               <select
                 value={selectedRepoId}
                 onChange={(e) => handleRepoChange(e.target.value)}
-                className="w-52 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 md:w-52"
               >
                 <option value="">Chọn kho</option>
                 {filteredRepositories.map(repo => (
@@ -178,7 +180,7 @@ export function ChatAssistant() {
           {messages.length > 0 && (
             <button
               onClick={() => setShowClearConfirm(true)}
-              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+              className="absolute right-3 top-3 rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 md:static"
               title="Xóa lịch sử"
             >
               <Trash2 size={16} />
@@ -187,7 +189,7 @@ export function ChatAssistant() {
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 p-6 overflow-y-auto space-y-6">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-6 p-4 md:p-6">
           {messages.length === 0 && !streamingText && (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
               <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center">

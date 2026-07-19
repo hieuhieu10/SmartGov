@@ -200,6 +200,34 @@ async def consolidate_feedback(
         )
 
 
+@router.post("/consolidate/revise", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+async def revise_draft_from_summary(
+    repo_id: str,
+    draft_document_id: str = Body(..., embed=True),
+    summary_document_id: str = Body(..., embed=True),
+    current_user: dict = Depends(get_current_user),
+):
+    """Hoàn thiện một bản dự thảo theo bảng tổng hợp góp ý đã tạo."""
+    repo = await can_access_repo(repo_id, current_user)
+    if not repo.get("is_owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ sở hữu kho mới có quyền cập nhật bản dự thảo",
+        )
+    try:
+        doc = await feedback_summary_service.revise_draft(
+            repo_id, current_user["id"], draft_document_id, summary_document_id,
+        )
+        return _build_document_response(doc)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except AIServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_public_ai_text(str(e)),
+        )
+
+
 @router.get("", response_model=list[DocumentResponse])
 async def list_documents(
     repo_id: str,

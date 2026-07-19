@@ -8,13 +8,17 @@ Used for template analysis and content generation that doesn't require RAG.
 import json
 import logging
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from openai import AsyncOpenAI
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class LLMEmptyResponseError(RuntimeError):
+    """Model phản hồi nhưng nội dung không thể dùng cho tác vụ hiện tại."""
 
 
 class LLMService:
@@ -51,7 +55,7 @@ class LLMService:
 
     def _get_fallback_client(self) -> Optional[AsyncOpenAI]:
         """Lazy-init the AsyncOpenAI client dự phòng, nếu có cấu hình."""
-        if not (settings.vllm_fallback_base_url and settings.vllm_fallback_model_name):
+        if not settings.vllm_fallback_base_url:
             return None
         if self._fallback_client is None:
             self._fallback_client = AsyncOpenAI(
@@ -61,12 +65,18 @@ class LLMService:
             )
             logger.info(
                 f"LLM fallback client initialized: "
-                f"{settings.vllm_fallback_base_url} / {settings.vllm_fallback_model_name}"
+                f"{settings.vllm_fallback_base_url} / {self._fallback_model_name()}"
             )
         return self._fallback_client
 
+    @staticmethod
+    def _fallback_model_name() -> str:
+        """Fallback có thể dùng cùng model khi chỉ đổi endpoint."""
+        return settings.vllm_fallback_model_name or settings.vllm_model_name
+
     async def chat(self, system_prompt: str, user_prompt: str,
-                   temperature: float = 0.3, max_tokens: int = 4096) -> str:
+                   temperature: float = 0.3, max_tokens: int = 4096,
+                   response_validator: Callable[[str], bool] | None = None) -> str:
         """
         Send a chat completion request and return the assistant's response.
 
@@ -74,21 +84,28 @@ class LLMService:
         động thử lại bằng model dự phòng. Nếu phản hồi bị cắt vì hết token
         (finish_reason=length), tự nối tiếp (xem ``_chat_with_continuation``).
         """
+        validator = response_validator or (lambda response: bool(response.strip()))
         try:
-            return await self._chat_with_continuation(
+            response = await self._chat_with_continuation(
                 self._get_client(), settings.vllm_model_name,
                 system_prompt, user_prompt, temperature, max_tokens,
             )
+            if not validator(response):
+                raise LLMEmptyResponseError("Model chính không trả về kết quả hợp lệ")
+            return response
         except Exception as e:
             fallback_client = self._get_fallback_client()
             if fallback_client is None:
                 logger.error(f"LLM request failed (no fallback configured): {e}")
                 raise
             logger.warning(f"LLM primary request failed, retrying with fallback: {e}")
-            return await self._chat_with_continuation(
-                fallback_client, settings.vllm_fallback_model_name,
+            response = await self._chat_with_continuation(
+                fallback_client, self._fallback_model_name(),
                 system_prompt, user_prompt, temperature, max_tokens,
             )
+            if not validator(response):
+                raise LLMEmptyResponseError("Model dự phòng không trả về kết quả hợp lệ")
+            return response
 
     async def _chat_with_continuation(
         self, client: AsyncOpenAI, model: str, system_prompt: str,

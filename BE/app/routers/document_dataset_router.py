@@ -60,7 +60,6 @@ async def extract_document_dataset(
     AI extraction fails for any reason, falls back to a clearly-labeled mock
     response instead of failing the request outright.
     """
-    _ = current_user
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
